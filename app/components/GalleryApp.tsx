@@ -13,8 +13,24 @@ interface MediaItem {
   longitude?: number;
   createdAt: string;
   url: string;
+  key: string;
   filename: string;
   owner: string;
+}
+
+interface SyncAddCandidate {
+  key: string;
+  filename: string;
+  size: number;
+  lastModified?: string;
+  suggestedTitle: string;
+  suggestedType: 'photo' | 'video';
+}
+
+interface SyncRemoveCandidate {
+  id: string;
+  key: string;
+  title: string;
 }
 
 export default function GalleryApp() {
@@ -23,17 +39,26 @@ export default function GalleryApp() {
   const [location, setLocation] = useState('Waikiki');
   const [type, setType] = useState<'photo' | 'video'>('photo');
   const [owner, setOwner] = useState('guest');
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [status, setStatus] = useState('Ready to upload');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
-  useEffect(() => {
+  const [syncPreview, setSyncPreview] = useState<{ toAdd: SyncAddCandidate[]; toRemove: SyncRemoveCandidate[] } | null>(null);
+  const [selectedAddKeys, setSelectedAddKeys] = useState<Set<string>>(new Set());
+  const [selectedRemoveIds, setSelectedRemoveIds] = useState<Set<string>>(new Set());
+  const [syncing, setSyncing] = useState(false);
+
+  function loadItems() {
     fetch('/api/media')
       .then((res) => res.json())
       .then((data) => setItems(Array.isArray(data) ? data : []))
       .catch(() => setItems([]));
+  }
+
+  useEffect(() => {
+    loadItems();
   }, []);
 
   async function handleLogin(event: FormEvent) {
@@ -54,34 +79,146 @@ export default function GalleryApp() {
 
   async function handleUpload(event: FormEvent) {
     event.preventDefault();
-    if (!file) {
-      setStatus('Please select a file first.');
+    if (files.length === 0) {
+      setStatus('Please select one or more files first.');
       return;
     }
 
-    setStatus('Uploading and generating metadata...');
-    const formData = new FormData();
-    formData.append('title', title || file.name);
-    formData.append('location', location);
-    formData.append('type', type);
-    formData.append('owner', owner);
-    formData.append('file', file);
+    setStatus(`Requesting upload URLs for ${files.length} file(s)...`);
 
-    const response = await fetch('/api/media', {
+    const presignResponse = await fetch('/api/media/presign', {
       method: 'POST',
-      body: formData,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        files: files.map((file) => ({ filename: file.name, contentType: file.type })),
+      }),
+    });
+
+    if (!presignResponse.ok) {
+      setStatus('Failed to get upload URLs');
+      return;
+    }
+
+    const { files: presigned } = (await presignResponse.json()) as {
+      files: { id: string; filename: string; key: string; uploadUrl: string }[];
+    };
+
+    setStatus(`Uploading ${files.length} file(s) to S3...`);
+
+    try {
+      await Promise.all(
+        presigned.map((entry, index) =>
+          fetch(entry.uploadUrl, {
+            method: 'PUT',
+            headers: { 'Content-Type': files[index].type || 'application/octet-stream' },
+            body: files[index],
+          }).then((res) => {
+            if (!res.ok) throw new Error(`Upload failed for ${entry.filename}`);
+          })
+        )
+      );
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Upload failed');
+      return;
+    }
+
+    setStatus('Saving metadata...');
+
+    const registerResponse = await fetch('/api/media', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        items: presigned.map((entry) => ({
+          key: entry.key,
+          filename: entry.filename,
+          title: files.length === 1 ? title || entry.filename : entry.filename.replace(/\.[^.]+$/, ''),
+          location,
+          type,
+          owner,
+        })),
+      }),
+    });
+
+    if (registerResponse.ok) {
+      const newItems: MediaItem[] = await registerResponse.json();
+      setItems((prev) => [...newItems, ...prev]);
+      setStatus(`Uploaded ${newItems.length} item(s)`);
+      setTitle('');
+      setFiles([]);
+    } else {
+      const error = await registerResponse.json().catch(() => ({}));
+      setStatus(error.error || 'Failed to save metadata');
+    }
+  }
+
+  async function handleCheckSync() {
+    setSyncing(true);
+    setStatus('Scanning S3 bucket for changes...');
+    try {
+      const response = await fetch('/api/media/sync');
+      const data = await response.json();
+      setSyncPreview(data);
+      setSelectedAddKeys(new Set(data.toAdd.map((item: SyncAddCandidate) => item.key)));
+      setSelectedRemoveIds(new Set(data.toRemove.map((item: SyncRemoveCandidate) => item.id)));
+      setStatus(`Found ${data.toAdd.length} new file(s) and ${data.toRemove.length} missing item(s)`);
+    } catch {
+      setStatus('Failed to scan S3 bucket');
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  async function handleApplySync() {
+    if (!syncPreview) return;
+    setSyncing(true);
+    setStatus('Applying sync...');
+
+    const add = syncPreview.toAdd
+      .filter((candidate) => selectedAddKeys.has(candidate.key))
+      .map((candidate) => ({
+        key: candidate.key,
+        filename: candidate.filename,
+        title: candidate.suggestedTitle,
+        type: candidate.suggestedType,
+        location,
+        owner,
+      }));
+
+    const removeIds = Array.from(selectedRemoveIds);
+
+    const response = await fetch('/api/media/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ add, removeIds }),
     });
 
     if (response.ok) {
-      const newItem = await response.json();
-      setItems((prev) => [newItem, ...prev]);
-      setStatus(`Uploaded ${newItem.title}`);
-      setTitle('');
-      setFile(null);
+      const result = await response.json();
+      setStatus(`Sync applied: +${result.added} / -${result.removed}`);
+      setSyncPreview(null);
+      loadItems();
     } else {
-      const error = await response.json().catch(() => ({}));
-      setStatus(error.error || 'Upload failed');
+      setStatus('Failed to apply sync');
     }
+    setSyncing(false);
+  }
+
+  function toggleAddKey(key: string) {
+    setSelectedAddKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function toggleRemoveId(id: string) {
+    setSelectedRemoveIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
   const featured = useMemo(() => items[0], [items]);
@@ -108,18 +245,88 @@ export default function GalleryApp() {
         </section>
 
         <section style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: 20, padding: '1.2rem' }}>
-          <h2 style={{ marginTop: 0 }}>Upload a new memory</h2>
+          <h2 style={{ marginTop: 0 }}>Upload new memories</h2>
           <form onSubmit={handleUpload} style={{ display: 'grid', gap: '0.75rem', maxWidth: 640 }}>
-            <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Title" style={inputStyle} />
+            <input
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder="Title (used only when uploading a single file)"
+              style={inputStyle}
+            />
             <input value={location} onChange={(event) => setLocation(event.target.value)} placeholder="Location" style={inputStyle} />
             <select value={type} onChange={(event) => setType(event.target.value as 'photo' | 'video')} style={inputStyle}>
               <option value="photo">Photo</option>
               <option value="video">Video</option>
             </select>
             <input value={owner} onChange={(event) => setOwner(event.target.value)} placeholder="Owner" style={inputStyle} />
-            <input type="file" accept="image/*,video/*" onChange={(event) => setFile(event.target.files?.[0] || null)} style={{ color: 'white' }} />
+            <input
+              type="file"
+              accept="image/*,video/*"
+              multiple
+              onChange={(event) => setFiles(event.target.files ? Array.from(event.target.files) : [])}
+              style={{ color: 'white' }}
+            />
+            {files.length > 0 ? (
+              <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.9rem' }}>{files.length} file(s) selected</p>
+            ) : null}
             <button type="submit" style={buttonStyle} disabled={!isLoggedIn}>Upload to gallery</button>
           </form>
+        </section>
+
+        <section style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: 20, padding: '1.2rem' }}>
+          <h2 style={{ marginTop: 0 }}>Sync with S3</h2>
+          <p style={{ color: '#cbd5e1' }}>Reconcile the gallery with what's actually in the bucket — pick up files added outside the app and drop entries whose files were deleted.</p>
+          <button type="button" style={buttonStyle} onClick={handleCheckSync} disabled={syncing}>
+            {syncing ? 'Working...' : 'Check S3 for changes'}
+          </button>
+
+          {syncPreview ? (
+            <div style={{ display: 'grid', gap: '1rem', marginTop: '1rem' }}>
+              {syncPreview.toAdd.length > 0 ? (
+                <div>
+                  <h3 style={{ marginBottom: '0.5rem' }}>New in S3 ({syncPreview.toAdd.length})</h3>
+                  <div style={{ display: 'grid', gap: '0.4rem' }}>
+                    {syncPreview.toAdd.map((candidate) => (
+                      <label key={candidate.key} style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', color: '#cbd5e1' }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedAddKeys.has(candidate.key)}
+                          onChange={() => toggleAddKey(candidate.key)}
+                        />
+                        {candidate.suggestedTitle} <span style={{ color: '#64748b' }}>({candidate.suggestedType}, {Math.round(candidate.size / 1024)} KB)</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {syncPreview.toRemove.length > 0 ? (
+                <div>
+                  <h3 style={{ marginBottom: '0.5rem' }}>Missing from S3 ({syncPreview.toRemove.length})</h3>
+                  <div style={{ display: 'grid', gap: '0.4rem' }}>
+                    {syncPreview.toRemove.map((candidate) => (
+                      <label key={candidate.id} style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', color: '#fca5a5' }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedRemoveIds.has(candidate.id)}
+                          onChange={() => toggleRemoveId(candidate.id)}
+                        />
+                        {candidate.title}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {syncPreview.toAdd.length === 0 && syncPreview.toRemove.length === 0 ? (
+                <p style={{ color: '#86efac' }}>Gallery is already in sync with S3.</p>
+              ) : (
+                <button type="button" style={buttonStyle} onClick={handleApplySync} disabled={syncing || !isLoggedIn}>
+                  Apply sync
+                </button>
+              )}
+            </div>
+          ) : null}
         </section>
 
         {featured ? (

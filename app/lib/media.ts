@@ -1,5 +1,6 @@
 import { promises as fs } from 'fs';
 import path from 'path';
+import { createViewUrl } from '@/app/lib/s3';
 
 export type MediaType = 'photo' | 'video';
 
@@ -12,17 +13,19 @@ export interface MediaItem {
   latitude?: number;
   longitude?: number;
   createdAt: string;
-  url: string;
+  key: string;
   filename: string;
   owner: string;
 }
 
+export interface MediaItemWithUrl extends MediaItem {
+  url: string;
+}
+
 const DATA_PATH = path.join(process.cwd(), 'data', 'media.json');
-const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads');
 
 async function ensureStore() {
   await fs.mkdir(path.dirname(DATA_PATH), { recursive: true });
-  await fs.mkdir(UPLOAD_DIR, { recursive: true });
   try {
     await fs.access(DATA_PATH);
   } catch {
@@ -48,13 +51,26 @@ export async function saveMediaItem(item: MediaItem) {
   return item;
 }
 
-export async function saveUploadedFile(file: File, itemId: string) {
-  const bytes = Buffer.from(await file.arrayBuffer());
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
-  const targetName = `${itemId}-${safeName}`;
-  const targetPath = path.join(UPLOAD_DIR, targetName);
-  await fs.writeFile(targetPath, bytes);
-  return `/uploads/${targetName}`;
+export async function saveMediaItems(newItems: MediaItem[]) {
+  const items = await readMediaItems();
+  items.unshift(...newItems);
+  await writeMediaItems(items);
+  return newItems;
+}
+
+export async function withViewUrls(items: MediaItem[]): Promise<MediaItemWithUrl[]> {
+  return Promise.all(
+    items.map(async (item) => ({
+      ...item,
+      url: await createViewUrl(item.key),
+    }))
+  );
+}
+
+export function inferTypeFromFilename(filename: string): MediaType {
+  const videoExtensions = ['.mp4', '.mov', '.m4v', '.webm', '.avi'];
+  const ext = path.extname(filename).toLowerCase();
+  return videoExtensions.includes(ext) ? 'video' : 'photo';
 }
 
 export function buildFallbackDescription(title: string, type: MediaType) {
