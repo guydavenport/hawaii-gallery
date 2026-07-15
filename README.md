@@ -72,6 +72,21 @@ npm run import-photos -- --dry-run               # preview what would be importe
 
 The script tracks progress in `data/photo-import-state.json` and dedupes by the Photos library's own UUID (stored as `sourceUuid` on each media item), so re-running with an overlapping or unbounded range is always safe — already-imported items are skipped automatically. Run it with no arguments whenever new trip photos land in Photos.app.
 
+## Deployment (AWS Amplify Hosting)
+
+Live at **https://main.d17uzi04qfmafw.amplifyapp.com** — deployed on AWS Amplify Hosting (app `d17uzi04qfmafw`, account 648372317920/`davenport`, us-east-1), connected to this GitHub repo with auto-deploy on push to `main`.
+
+**Runtime config gotcha:** Amplify's console/CLI "Environment variables" for this app never actually reach the Next.js SSR compute's `process.env` at runtime (confirmed by direct inspection — present at build time, absent at request time, regardless of compute role configuration). Rather than depend on that, app config is stored directly in SSM Parameter Store under `/hawaii-gallery/prod/` and fetched explicitly on first use per warm Lambda container (see `app/lib/runtime-config.ts`). To change a config value in production:
+```bash
+aws ssm put-parameter --name "/hawaii-gallery/prod/<NAME>" --value "<value>" \
+  --type String --overwrite --profile davenport --region us-east-1
+```
+(use `--type SecureString` for `SESSION_SECRET`). Takes effect on the next cold start — redeploy or wait for Lambda to recycle.
+
+**IAM**: the app runs under a dedicated role (`hawaii-gallery-amplify`) trusted by both `amplify.amazonaws.com` and `lambda.amazonaws.com`, scoped to: the S3 media bucket, `cognito-idp:InitiateAuth` on the user pool, the SSM config path above, and CloudWatch Logs.
+
+Auth is enforced per-route (not via Next.js middleware) inside each `/api/media*` handler, since the AWS SDK needed to read SSM isn't safe to bundle into Next's Edge middleware runtime.
+
 ## Next steps
 - Move metadata to DynamoDB
 - Add map-based browsing
