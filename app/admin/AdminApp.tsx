@@ -26,7 +26,7 @@ export default function AdminApp() {
   const [title, setTitle] = useState('');
   const [location, setLocation] = useState('Waikiki');
   const [type, setType] = useState<'photo' | 'video'>('photo');
-  const [owner, setOwner] = useState('guy');
+  const [owner, setOwner] = useState('Guy');
   const [files, setFiles] = useState<File[]>([]);
   const [status, setStatus] = useState('Ready to upload');
 

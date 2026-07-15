@@ -19,7 +19,7 @@ interface CliArgs {
 
 function parseArgs(): CliArgs {
   const args = process.argv.slice(2);
-  const result: CliArgs = { owner: 'guy', dryRun: false };
+  const result: CliArgs = { owner: 'Guy', dryRun: false };
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
