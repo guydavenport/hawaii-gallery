@@ -41,6 +41,7 @@ export default function GalleryApp() {
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [downloading, setDownloading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   async function loadItems() {
     const res = await fetch('/api/media');
@@ -182,9 +183,22 @@ export default function GalleryApp() {
     [items]
   );
 
+  const filteredItems = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return sortedItems;
+    return sortedItems.filter(
+      (item) =>
+        item.title.toLowerCase().includes(q) ||
+        item.description.toLowerCase().includes(q) ||
+        item.location.toLowerCase().includes(q) ||
+        item.owner.toLowerCase().includes(q) ||
+        dayLabel(item.createdAt).toLowerCase().includes(q)
+    );
+  }, [sortedItems, searchQuery]);
+
   const dayGroups = useMemo(() => {
     const groups: { key: string; label: string; items: MediaItem[] }[] = [];
-    for (const item of sortedItems) {
+    for (const item of filteredItems) {
       const key = dayKey(item.createdAt);
       const last = groups[groups.length - 1];
       if (last && last.key === key) {
@@ -194,7 +208,7 @@ export default function GalleryApp() {
       }
     }
     return groups;
-  }, [sortedItems]);
+  }, [filteredItems]);
 
   function scrollToDay(key: string) {
     document.getElementById(`day-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -243,6 +257,15 @@ export default function GalleryApp() {
           </div>
         </header>
 
+        {isLoggedIn && sortedItems.length > 0 ? (
+          <input
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Search by title, description, location, photographer, or date..."
+            style={inputStyle}
+          />
+        ) : null}
+
         {status ? <p style={{ color: '#fca5a5', margin: 0 }}>{status}</p> : null}
 
         {!isLoggedIn ? (
@@ -282,7 +305,7 @@ export default function GalleryApp() {
                 </div>
                 <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
                   {group.items.map((item) => {
-                    const globalIndex = sortedItems.indexOf(item);
+                    const globalIndex = filteredItems.indexOf(item);
                     return (
                       <article key={item.id} style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: 20, overflow: 'hidden', opacity: item.hidden ? 0.5 : 1, position: 'relative' }}>
                         {selectMode ? (
@@ -360,6 +383,9 @@ export default function GalleryApp() {
               </section>
             ))}
             {sortedItems.length === 0 ? <p style={{ color: '#94a3b8' }}>No photos yet.</p> : null}
+            {sortedItems.length > 0 && filteredItems.length === 0 ? (
+              <p style={{ color: '#94a3b8' }}>No photos match &quot;{searchQuery}&quot;.</p>
+            ) : null}
           </div>
         )}
       </div>
@@ -395,7 +421,7 @@ export default function GalleryApp() {
 
       {lightboxIndex !== null ? (
         <Lightbox
-          items={sortedItems}
+          items={filteredItems}
           index={lightboxIndex}
           role={role}
           onClose={() => setLightboxIndex(null)}
