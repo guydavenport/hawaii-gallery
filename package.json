@@ -10,8 +10,10 @@
   },
   "dependencies": {
     "@aws-sdk/client-cognito-identity-provider": "^3.1087.0",
+    "@aws-sdk/client-dynamodb": "^3.1087.0",
     "@aws-sdk/client-s3": "^3.1087.0",
     "@aws-sdk/client-ssm": "^3.1087.0",
+    "@aws-sdk/lib-dynamodb": "^3.1087.0",
     "@aws-sdk/s3-request-presigner": "^3.1087.0",
     "leaflet": "^1.9.4",
     "next": "14.2.15",

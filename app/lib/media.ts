@@ -1,5 +1,12 @@
-import { promises as fs } from 'fs';
 import path from 'path';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import {
+  DynamoDBDocumentClient,
+  ScanCommand,
+  PutCommand,
+  BatchWriteCommand,
+  UpdateCommand,
+} from '@aws-sdk/lib-dynamodb';
 import { createViewUrl } from '@/app/lib/s3';
 
 export type MediaType = 'photo' | 'video';
@@ -24,54 +31,116 @@ export interface MediaItemWithUrl extends MediaItem {
   url: string;
 }
 
-const DATA_PATH = path.join(process.cwd(), 'data', 'media.json');
-
-async function ensureStore() {
-  await fs.mkdir(path.dirname(DATA_PATH), { recursive: true });
-  try {
-    await fs.access(DATA_PATH);
-  } catch {
-    await fs.writeFile(DATA_PATH, '[]\n', 'utf8');
+function requireEnv(name: string) {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
   }
+  return value;
+}
+
+function getTableName() {
+  return requireEnv('DYNAMODB_TABLE');
+}
+
+const ddbClient = new DynamoDBClient({ region: process.env.AWS_REGION || 'us-east-1' });
+const docClient = DynamoDBDocumentClient.from(ddbClient, {
+  marshallOptions: { removeUndefinedValues: true },
+});
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
 }
 
 export async function readMediaItems(): Promise<MediaItem[]> {
-  await ensureStore();
-  const raw = await fs.readFile(DATA_PATH, 'utf8');
-  return JSON.parse(raw) as MediaItem[];
-}
+  const tableName = getTableName();
+  const items: MediaItem[] = [];
+  let lastEvaluatedKey: Record<string, unknown> | undefined;
 
-export async function writeMediaItems(items: MediaItem[]) {
-  await ensureStore();
-  const sorted = [...items].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  await fs.writeFile(DATA_PATH, JSON.stringify(sorted, null, 2) + '\n', 'utf8');
+  do {
+    const response = await docClient.send(
+      new ScanCommand({ TableName: tableName, ExclusiveStartKey: lastEvaluatedKey })
+    );
+    items.push(...((response.Items || []) as MediaItem[]));
+    lastEvaluatedKey = response.LastEvaluatedKey;
+  } while (lastEvaluatedKey);
+
+  return items.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
 export async function saveMediaItem(item: MediaItem) {
-  const items = await readMediaItems();
-  items.push(item);
-  await writeMediaItems(items);
+  const tableName = getTableName();
+  await docClient.send(new PutCommand({ TableName: tableName, Item: item }));
   return item;
 }
 
 export async function saveMediaItems(newItems: MediaItem[]) {
-  const items = await readMediaItems();
-  items.push(...newItems);
-  await writeMediaItems(items);
+  if (newItems.length === 0) return newItems;
+  const tableName = getTableName();
+
+  for (const batch of chunk(newItems, 25)) {
+    await docClient.send(
+      new BatchWriteCommand({
+        RequestItems: {
+          [tableName]: batch.map((item) => ({ PutRequest: { Item: item } })),
+        },
+      })
+    );
+  }
+
   return newItems;
+}
+
+export async function deleteMediaItems(ids: string[]) {
+  if (ids.length === 0) return;
+  const tableName = getTableName();
+
+  for (const batch of chunk(ids, 25)) {
+    await docClient.send(
+      new BatchWriteCommand({
+        RequestItems: {
+          [tableName]: batch.map((id) => ({ DeleteRequest: { Key: { id } } })),
+        },
+      })
+    );
+  }
 }
 
 export async function updateMediaItem(
   id: string,
   updates: Partial<Pick<MediaItem, 'description' | 'hidden' | 'title' | 'location'>>
 ): Promise<MediaItem | null> {
-  const items = await readMediaItems();
-  const index = items.findIndex((item) => item.id === id);
-  if (index === -1) return null;
+  const entries = Object.entries(updates).filter(([, value]) => value !== undefined);
+  if (entries.length === 0) return null;
 
-  items[index] = { ...items[index], ...updates };
-  await writeMediaItems(items);
-  return items[index];
+  const tableName = getTableName();
+  const updateExpression = `SET ${entries.map((_, i) => `#f${i} = :v${i}`).join(', ')}`;
+  const expressionAttributeNames = Object.fromEntries(entries.map(([key], i) => [`#f${i}`, key]));
+  const expressionAttributeValues = Object.fromEntries(entries.map(([, value], i) => [`:v${i}`, value]));
+
+  try {
+    const response = await docClient.send(
+      new UpdateCommand({
+        TableName: tableName,
+        Key: { id },
+        UpdateExpression: updateExpression,
+        ExpressionAttributeNames: expressionAttributeNames,
+        ExpressionAttributeValues: expressionAttributeValues,
+        ConditionExpression: 'attribute_exists(id)',
+        ReturnValues: 'ALL_NEW',
+      })
+    );
+    return (response.Attributes as MediaItem) || null;
+  } catch (error) {
+    if ((error as { name?: string }).name === 'ConditionalCheckFailedException') {
+      return null;
+    }
+    throw error;
+  }
 }
 
 export function visibleToRole(items: MediaItem[], role: 'admin' | 'guest'): MediaItem[] {

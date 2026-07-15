@@ -4,10 +4,10 @@ A private gallery app for photos and videos from a Hawaii trip.
 
 ## Stack
 - Next.js
-- Auth: Amazon Cognito (admin-created accounts only, no public sign-up)
+- Auth: Amazon Cognito for the admin account; a single shared password (no account) for guest view-only access
 - Media storage: S3 (private bucket, presigned URLs)
-- AWS-friendly architecture: Amplify, DynamoDB, Lambda
-- Metadata stored in `data/media.json` for now
+- Metadata storage: DynamoDB (`hawaii-gallery-media` table)
+- Hosting: AWS Amplify Hosting (Lambda-based SSR compute)
 
 ## Run locally
 
@@ -26,11 +26,13 @@ npm run dev
 | `AWS_PROFILE` | Local AWS CLI/SSO profile used to sign S3 requests |
 | `AWS_REGION` | Region of the S3 bucket and Cognito user pool |
 | `S3_BUCKET` | Bucket that stores uploaded photos/videos |
-| `COGNITO_USER_POOL_ID` | Cognito user pool used for sign-in |
-| `COGNITO_CLIENT_ID` | Cognito app client (no secret) used for sign-in |
+| `COGNITO_USER_POOL_ID` | Cognito user pool used for admin sign-in |
+| `COGNITO_CLIENT_ID` | Cognito app client (no secret) used for admin sign-in |
 | `SESSION_SECRET` | Random secret used to sign session cookies — generate with `openssl rand -hex 32` |
+| `GUEST_PASSWORD` | Shared password for guest (view-only) access — sign in with no email |
+| `DYNAMODB_TABLE` | DynamoDB table storing media metadata (`hawaii-gallery-media`) |
 
-Accounts are admin-created only (no public sign-up). To add a new user:
+Two account types: **admin** (email + Cognito password — can upload, sync, edit descriptions, and hide items from guests) and **guest** (leave the email field blank, enter `GUEST_PASSWORD` — view-only, sees only non-hidden items). Admin accounts are created manually (no public sign-up):
 ```bash
 aws cognito-idp admin-create-user --user-pool-id <POOL_ID> --username <email> \
   --user-attributes Name=email,Value=<email> Name=email_verified,Value=true \
@@ -45,10 +47,11 @@ The bucket is private (no public access) — the app generates short-lived presi
 aws sso login --profile davenport
 ```
 
-## How media storage works
-- Uploads go directly from the browser to S3 via a presigned PUT URL (`/api/media/presign`), then the app registers metadata (`/api/media`).
-- The gallery list (`GET /api/media`) reads `data/media.json` and generates fresh presigned GET URLs for each item on every request.
-- **Sync with S3**: the app can scan the bucket and diff it against `data/media.json` — files added directly to the bucket (outside the app) show up as importable, and gallery entries whose file was deleted from the bucket are flagged for removal. Use the "Sync with S3" panel in the UI.
+## How the app works
+- **Media storage**: uploads go directly from the browser to S3 via a presigned PUT URL (`/api/media/presign`, admin-only page at `/admin`), then the app registers metadata in DynamoDB (`/api/media`). The gallery list (`GET /api/media`) reads DynamoDB and generates fresh presigned GET URLs for each item on every request — the bucket itself is never public.
+- **Sync with S3** (`/admin`): scans the bucket and diffs it against DynamoDB — files added directly to the bucket (outside the app) show up as importable, and gallery entries whose file was deleted from the bucket are flagged for removal.
+- **Gallery view** (`/`): grouped by day in Hawaii local time, oldest to newest. Click any item for a full-screen lightbox with prev/next (click, on-screen arrows, or ← →). Admins get inline "Edit" (description) and "Hide from guests" controls on every card.
+- **Map** (`/map`): groups photos by location (averaged GPS coordinates), pins sized by photo count, click a pin to browse thumbnails and open the lightbox. Uses Leaflet + OpenStreetMap tiles — no API key required.
 
 ## Importing photos from the Mac's Photos library
 
@@ -85,10 +88,12 @@ aws ssm put-parameter --name "/hawaii-gallery/prod/<NAME>" --value "<value>" \
 ```
 (use `--type SecureString` for `SESSION_SECRET`). Takes effect on the next cold start — redeploy or wait for Lambda to recycle.
 
-**IAM**: the app runs under a dedicated role (`hawaii-gallery-amplify`) trusted by both `amplify.amazonaws.com` and `lambda.amazonaws.com`, scoped to: the S3 media bucket, `cognito-idp:InitiateAuth` on the user pool, the SSM config path above, and CloudWatch Logs.
+**IAM**: the app runs under a dedicated role (`hawaii-gallery-amplify`) trusted by both `amplify.amazonaws.com` and `lambda.amazonaws.com`, scoped to: the S3 media bucket, `cognito-idp:InitiateAuth` on the user pool, the DynamoDB table, the SSM config path above, and CloudWatch Logs.
 
 Auth is enforced per-route (not via Next.js middleware) inside each `/api/media*` handler, since the AWS SDK needed to read SSM isn't safe to bundle into Next's Edge middleware runtime.
 
+**Filesystem gotcha:** Amplify's Lambda-based SSR compute has a **read-only filesystem** outside `/tmp`. The app originally stored metadata in `data/media.json` on disk — reads worked fine in production, but every write (upload registration, sync, edits) was silently failing with an unhandled exception until this was caught and metadata storage was moved to DynamoDB. `data/media.json` and `data/photo-import-state.json` remain in the repo as a point-in-time backup / for the local import script's bookkeeping, but the deployed app no longer reads or writes them.
+
 ## Next steps
-- Move metadata to DynamoDB
-- Add map-based browsing
+- Multiple guest passwords / per-guest tracking, if that's ever needed
+- Album or trip grouping beyond a single gallery

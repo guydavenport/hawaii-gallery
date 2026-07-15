@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { listUploadedObjects } from '@/app/lib/s3';
 import {
+  deleteMediaItems,
   generateDescription,
   inferTypeFromFilename,
   readMediaItems,
-  writeMediaItems,
+  saveMediaItems,
   type MediaItem,
   type MediaType,
 } from '@/app/lib/media';
@@ -65,8 +66,6 @@ export async function POST(request: NextRequest) {
   const addItems: ApplyAddItem[] = Array.isArray(body?.add) ? body.add : [];
   const removeIds: string[] = Array.isArray(body?.removeIds) ? body.removeIds : [];
 
-  const items = await readMediaItems();
-
   const newItems: MediaItem[] = await Promise.all(
     addItems.map(async (raw) => {
       const title = raw.title?.trim() || raw.filename || 'Untitled';
@@ -89,11 +88,8 @@ export async function POST(request: NextRequest) {
     })
   );
 
-  const removeIdSet = new Set(removeIds);
-  const remaining = items.filter((item) => !removeIdSet.has(item.id));
-  const finalItems = [...newItems, ...remaining];
+  await saveMediaItems(newItems);
+  await deleteMediaItems(removeIds);
 
-  await writeMediaItems(finalItems);
-
-  return NextResponse.json({ added: newItems.length, removed: items.length - remaining.length });
+  return NextResponse.json({ added: newItems.length, removed: removeIds.length });
 }
