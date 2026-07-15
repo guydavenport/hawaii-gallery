@@ -30,3 +30,6 @@ yarn-error.log*
 # photo import tooling
 /.venv-photos
 /.photo-import-staging
+
+# local Claude Code tooling config
+/.claude

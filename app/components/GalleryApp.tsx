@@ -32,6 +32,7 @@ export default function GalleryApp() {
   const [checkingSession, setCheckingSession] = useState(true);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitleDraft, setEditTitleDraft] = useState('');
   const [editDraft, setEditDraft] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -98,6 +99,7 @@ export default function GalleryApp() {
 
   function startEdit(item: MediaItem) {
     setEditingId(item.id);
+    setEditTitleDraft(item.title);
     setEditDraft(item.description);
   }
 
@@ -105,14 +107,14 @@ export default function GalleryApp() {
     const response = await fetch(`/api/media/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ description: editDraft }),
+      body: JSON.stringify({ title: editTitleDraft, description: editDraft }),
     });
     if (response.ok) {
       const updated: MediaItem = await response.json();
       setItems((prev) => prev.map((item) => (item.id === id ? { ...item, ...updated } : item)));
       setEditingId(null);
     } else {
-      setStatus('Failed to save description');
+      setStatus('Failed to save changes');
     }
   }
 
@@ -213,12 +215,18 @@ export default function GalleryApp() {
                           )}
                         </div>
                         <div style={{ padding: '0.9rem' }}>
-                          <h3 style={{ margin: '0 0 0.35rem' }}>{item.title}</h3>
                           {editingId === item.id ? (
                             <div style={{ display: 'grid', gap: '0.5rem' }}>
+                              <input
+                                value={editTitleDraft}
+                                onChange={(event) => setEditTitleDraft(event.target.value)}
+                                placeholder="Title"
+                                style={inputStyle}
+                              />
                               <textarea
                                 value={editDraft}
                                 onChange={(event) => setEditDraft(event.target.value)}
+                                placeholder="Description"
                                 style={{ ...inputStyle, minHeight: 80 }}
                               />
                               <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -227,7 +235,10 @@ export default function GalleryApp() {
                               </div>
                             </div>
                           ) : (
-                            <p style={{ margin: '0 0 0.5rem', color: '#cbd5e1', lineHeight: 1.5 }}>{item.description}</p>
+                            <>
+                              <h3 style={{ margin: '0 0 0.35rem' }}>{item.title}</h3>
+                              <p style={{ margin: '0 0 0.5rem', color: '#cbd5e1', lineHeight: 1.5 }}>{item.description}</p>
+                            </>
                           )}
                           <p style={{ margin: '0', color: '#94a3b8', fontSize: '0.92rem' }}>{item.location}</p>
                           {role === 'admin' && editingId !== item.id ? (
