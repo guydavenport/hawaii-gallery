@@ -2,72 +2,68 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties, FormEvent } from 'react';
+import Link from 'next/link';
+import type { MediaItem } from '@/app/lib/types';
+import Lightbox from '@/app/components/Lightbox';
 
-interface MediaItem {
-  id: string;
-  title: string;
-  description: string;
-  type: 'photo' | 'video';
-  location: string;
-  latitude?: number;
-  longitude?: number;
-  createdAt: string;
-  url: string;
-  key: string;
-  filename: string;
-  owner: string;
+const HAWAII_TZ = 'Pacific/Honolulu';
+
+function dayKey(createdAt: string) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: HAWAII_TZ }).format(new Date(createdAt));
 }
 
-interface SyncAddCandidate {
-  key: string;
-  filename: string;
-  size: number;
-  lastModified?: string;
-  suggestedTitle: string;
-  suggestedType: 'photo' | 'video';
-}
-
-interface SyncRemoveCandidate {
-  id: string;
-  key: string;
-  title: string;
+function dayLabel(createdAt: string) {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: HAWAII_TZ,
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(new Date(createdAt));
 }
 
 export default function GalleryApp() {
   const [items, setItems] = useState<MediaItem[]>([]);
-  const [title, setTitle] = useState('');
-  const [location, setLocation] = useState('Waikiki');
-  const [type, setType] = useState<'photo' | 'video'>('photo');
-  const [owner, setOwner] = useState('guest');
-  const [files, setFiles] = useState<File[]>([]);
-  const [status, setStatus] = useState('Ready to upload');
+  const [status, setStatus] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-
-  const [syncPreview, setSyncPreview] = useState<{ toAdd: SyncAddCandidate[]; toRemove: SyncRemoveCandidate[] } | null>(null);
-  const [selectedAddKeys, setSelectedAddKeys] = useState<Set<string>>(new Set());
-  const [selectedRemoveIds, setSelectedRemoveIds] = useState<Set<string>>(new Set());
-  const [syncing, setSyncing] = useState(false);
+  const [role, setRole] = useState<'admin' | 'guest' | null>(null);
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState('');
 
   async function loadItems() {
-    try {
-      const res = await fetch('/api/media');
-      if (!res.ok) {
-        setIsLoggedIn(false);
-        setItems([]);
-        return;
-      }
-      const data = await res.json();
-      setIsLoggedIn(true);
-      setItems(Array.isArray(data) ? data : []);
-    } catch {
+    const res = await fetch('/api/media');
+    if (!res.ok) {
       setItems([]);
+      return;
+    }
+    const data = await res.json();
+    setItems(Array.isArray(data) ? data : []);
+  }
+
+  async function checkSession() {
+    setCheckingSession(true);
+    try {
+      const res = await fetch('/api/auth');
+      const data = await res.json();
+      if (data.authenticated) {
+        setIsLoggedIn(true);
+        setRole(data.role);
+        await loadItems();
+      } else {
+        setIsLoggedIn(false);
+        setRole(null);
+      }
+    } finally {
+      setCheckingSession(false);
     }
   }
 
   useEffect(() => {
-    loadItems();
+    checkSession();
   }, []);
 
   async function handleLogin(event: FormEvent) {
@@ -79,10 +75,12 @@ export default function GalleryApp() {
       body: JSON.stringify({ email, password }),
     });
     if (response.ok) {
+      const data = await response.json();
       setIsLoggedIn(true);
+      setRole(data.role);
       setPassword('');
-      setStatus('Signed in. You can upload media to your gallery.');
-      loadItems();
+      setStatus('');
+      await loadItems();
     } else {
       const error = await response.json().catch(() => ({}));
       setStatus(error.error || 'Login failed');
@@ -92,155 +90,67 @@ export default function GalleryApp() {
   async function handleLogout() {
     await fetch('/api/auth', { method: 'DELETE' });
     setIsLoggedIn(false);
+    setRole(null);
     setItems([]);
     setStatus('Signed out.');
   }
 
-  async function handleUpload(event: FormEvent) {
-    event.preventDefault();
-    if (files.length === 0) {
-      setStatus('Please select one or more files first.');
-      return;
-    }
-
-    setStatus(`Requesting upload URLs for ${files.length} file(s)...`);
-
-    const presignResponse = await fetch('/api/media/presign', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        files: files.map((file) => ({ filename: file.name, contentType: file.type })),
-      }),
-    });
-
-    if (!presignResponse.ok) {
-      setStatus('Failed to get upload URLs');
-      return;
-    }
-
-    const { files: presigned } = (await presignResponse.json()) as {
-      files: { id: string; filename: string; key: string; uploadUrl: string }[];
-    };
-
-    setStatus(`Uploading ${files.length} file(s) to S3...`);
-
-    try {
-      await Promise.all(
-        presigned.map((entry, index) =>
-          fetch(entry.uploadUrl, {
-            method: 'PUT',
-            headers: { 'Content-Type': files[index].type || 'application/octet-stream' },
-            body: files[index],
-          }).then((res) => {
-            if (!res.ok) throw new Error(`Upload failed for ${entry.filename}`);
-          })
-        )
-      );
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Upload failed');
-      return;
-    }
-
-    setStatus('Saving metadata...');
-
-    const registerResponse = await fetch('/api/media', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        items: presigned.map((entry) => ({
-          key: entry.key,
-          filename: entry.filename,
-          title: files.length === 1 ? title || entry.filename : entry.filename.replace(/\.[^.]+$/, ''),
-          location,
-          type,
-          owner,
-        })),
-      }),
-    });
-
-    if (registerResponse.ok) {
-      const newItems: MediaItem[] = await registerResponse.json();
-      setItems((prev) => [...newItems, ...prev]);
-      setStatus(`Uploaded ${newItems.length} item(s)`);
-      setTitle('');
-      setFiles([]);
-    } else {
-      const error = await registerResponse.json().catch(() => ({}));
-      setStatus(error.error || 'Failed to save metadata');
-    }
+  function startEdit(item: MediaItem) {
+    setEditingId(item.id);
+    setEditDraft(item.description);
   }
 
-  async function handleCheckSync() {
-    setSyncing(true);
-    setStatus('Scanning S3 bucket for changes...');
-    try {
-      const response = await fetch('/api/media/sync');
-      const data = await response.json();
-      setSyncPreview(data);
-      setSelectedAddKeys(new Set(data.toAdd.map((item: SyncAddCandidate) => item.key)));
-      setSelectedRemoveIds(new Set(data.toRemove.map((item: SyncRemoveCandidate) => item.id)));
-      setStatus(`Found ${data.toAdd.length} new file(s) and ${data.toRemove.length} missing item(s)`);
-    } catch {
-      setStatus('Failed to scan S3 bucket');
-    } finally {
-      setSyncing(false);
-    }
-  }
-
-  async function handleApplySync() {
-    if (!syncPreview) return;
-    setSyncing(true);
-    setStatus('Applying sync...');
-
-    const add = syncPreview.toAdd
-      .filter((candidate) => selectedAddKeys.has(candidate.key))
-      .map((candidate) => ({
-        key: candidate.key,
-        filename: candidate.filename,
-        title: candidate.suggestedTitle,
-        type: candidate.suggestedType,
-        location,
-        owner,
-      }));
-
-    const removeIds = Array.from(selectedRemoveIds);
-
-    const response = await fetch('/api/media/sync', {
-      method: 'POST',
+  async function saveEdit(id: string) {
+    const response = await fetch(`/api/media/${id}`, {
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ add, removeIds }),
+      body: JSON.stringify({ description: editDraft }),
     });
-
     if (response.ok) {
-      const result = await response.json();
-      setStatus(`Sync applied: +${result.added} / -${result.removed}`);
-      setSyncPreview(null);
-      loadItems();
+      const updated: MediaItem = await response.json();
+      setItems((prev) => prev.map((item) => (item.id === id ? { ...item, ...updated } : item)));
+      setEditingId(null);
     } else {
-      setStatus('Failed to apply sync');
+      setStatus('Failed to save description');
     }
-    setSyncing(false);
   }
 
-  function toggleAddKey(key: string) {
-    setSelectedAddKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
+  async function toggleHidden(item: MediaItem) {
+    const response = await fetch(`/api/media/${item.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hidden: !item.hidden }),
     });
+    if (response.ok) {
+      const updated: MediaItem = await response.json();
+      setItems((prev) => prev.map((entry) => (entry.id === item.id ? { ...entry, ...updated } : entry)));
+    } else {
+      setStatus('Failed to update visibility');
+    }
   }
 
-  function toggleRemoveId(id: string) {
-    setSelectedRemoveIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
+  const sortedItems = useMemo(
+    () => [...items].sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+    [items]
+  );
 
-  const featured = useMemo(() => items[0], [items]);
+  const dayGroups = useMemo(() => {
+    const groups: { key: string; label: string; items: MediaItem[] }[] = [];
+    for (const item of sortedItems) {
+      const key = dayKey(item.createdAt);
+      const last = groups[groups.length - 1];
+      if (last && last.key === key) {
+        last.items.push(item);
+      } else {
+        groups.push({ key, label: dayLabel(item.createdAt), items: [item] });
+      }
+    }
+    return groups;
+  }, [sortedItems]);
+
+  if (checkingSession) {
+    return null;
+  }
 
   return (
     <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #07111f 0%, #14233d 100%)', color: 'white', padding: '2rem 1.25rem' }}>
@@ -250,148 +160,93 @@ export default function GalleryApp() {
             <p style={{ margin: 0, textTransform: 'uppercase', letterSpacing: '0.3em', color: '#7dd3fc' }}>Hawaii trip gallery</p>
             <h1 style={{ margin: '0.35rem 0 0', fontSize: '2rem' }}>Private gallery for photos and videos</h1>
           </div>
-          <div style={{ color: '#cbd5e1', fontSize: '0.95rem' }}>{status}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+            {isLoggedIn ? (
+              <>
+                <Link href="/map" style={linkStyle}>Map</Link>
+                {role === 'admin' ? <Link href="/admin" style={linkStyle}>Admin</Link> : null}
+                <button type="button" style={{ ...buttonStyle, background: '#334155', color: 'white' }} onClick={handleLogout}>
+                  Sign out
+                </button>
+              </>
+            ) : null}
+          </div>
         </header>
 
-        <section style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: 20, padding: '1.2rem' }}>
-          <h2 style={{ marginTop: 0 }}>Sign in</h2>
-          {isLoggedIn ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-              <p style={{ color: '#86efac', margin: 0 }}>Signed in. Uploads are enabled.</p>
-              <button type="button" style={{ ...buttonStyle, background: '#334155', color: 'white' }} onClick={handleLogout}>
-                Sign out
-              </button>
-            </div>
-          ) : (
+        {status ? <p style={{ color: '#fca5a5', margin: 0 }}>{status}</p> : null}
+
+        {!isLoggedIn ? (
+          <section style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: 20, padding: '1.2rem' }}>
+            <h2 style={{ marginTop: 0 }}>Sign in</h2>
             <form onSubmit={handleLogin} style={{ display: 'grid', gap: '0.75rem', maxWidth: 480 }}>
-              <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email" style={inputStyle} />
+              <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email (leave blank for guest access)" style={inputStyle} />
               <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password" type="password" style={inputStyle} />
               <button type="submit" style={buttonStyle}>Sign in</button>
             </form>
-          )}
-        </section>
-
-        <section style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: 20, padding: '1.2rem' }}>
-          <h2 style={{ marginTop: 0 }}>Upload new memories</h2>
-          <form onSubmit={handleUpload} style={{ display: 'grid', gap: '0.75rem', maxWidth: 640 }}>
-            <input
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              placeholder="Title (used only when uploading a single file)"
-              style={inputStyle}
-            />
-            <input value={location} onChange={(event) => setLocation(event.target.value)} placeholder="Location" style={inputStyle} />
-            <select value={type} onChange={(event) => setType(event.target.value as 'photo' | 'video')} style={inputStyle}>
-              <option value="photo">Photo</option>
-              <option value="video">Video</option>
-            </select>
-            <input value={owner} onChange={(event) => setOwner(event.target.value)} placeholder="Owner" style={inputStyle} />
-            <input
-              type="file"
-              accept="image/*,video/*"
-              multiple
-              onChange={(event) => setFiles(event.target.files ? Array.from(event.target.files) : [])}
-              style={{ color: 'white' }}
-            />
-            {files.length > 0 ? (
-              <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.9rem' }}>{files.length} file(s) selected</p>
-            ) : null}
-            <button type="submit" style={buttonStyle} disabled={!isLoggedIn}>Upload to gallery</button>
-          </form>
-        </section>
-
-        <section style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: 20, padding: '1.2rem' }}>
-          <h2 style={{ marginTop: 0 }}>Sync with S3</h2>
-          <p style={{ color: '#cbd5e1' }}>Reconcile the gallery with what's actually in the bucket — pick up files added outside the app and drop entries whose files were deleted.</p>
-          <button type="button" style={buttonStyle} onClick={handleCheckSync} disabled={syncing}>
-            {syncing ? 'Working...' : 'Check S3 for changes'}
-          </button>
-
-          {syncPreview ? (
-            <div style={{ display: 'grid', gap: '1rem', marginTop: '1rem' }}>
-              {syncPreview.toAdd.length > 0 ? (
-                <div>
-                  <h3 style={{ marginBottom: '0.5rem' }}>New in S3 ({syncPreview.toAdd.length})</h3>
-                  <div style={{ display: 'grid', gap: '0.4rem' }}>
-                    {syncPreview.toAdd.map((candidate) => (
-                      <label key={candidate.key} style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', color: '#cbd5e1' }}>
-                        <input
-                          type="checkbox"
-                          checked={selectedAddKeys.has(candidate.key)}
-                          onChange={() => toggleAddKey(candidate.key)}
-                        />
-                        {candidate.suggestedTitle} <span style={{ color: '#64748b' }}>({candidate.suggestedType}, {Math.round(candidate.size / 1024)} KB)</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              {syncPreview.toRemove.length > 0 ? (
-                <div>
-                  <h3 style={{ marginBottom: '0.5rem' }}>Missing from S3 ({syncPreview.toRemove.length})</h3>
-                  <div style={{ display: 'grid', gap: '0.4rem' }}>
-                    {syncPreview.toRemove.map((candidate) => (
-                      <label key={candidate.id} style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', color: '#fca5a5' }}>
-                        <input
-                          type="checkbox"
-                          checked={selectedRemoveIds.has(candidate.id)}
-                          onChange={() => toggleRemoveId(candidate.id)}
-                        />
-                        {candidate.title}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              {syncPreview.toAdd.length === 0 && syncPreview.toRemove.length === 0 ? (
-                <p style={{ color: '#86efac' }}>Gallery is already in sync with S3.</p>
-              ) : (
-                <button type="button" style={buttonStyle} onClick={handleApplySync} disabled={syncing || !isLoggedIn}>
-                  Apply sync
-                </button>
-              )}
-            </div>
-          ) : null}
-        </section>
-
-        {featured ? (
-          <section style={{ display: 'grid', gap: '1rem', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
-            <div style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: 20, padding: '1rem' }}>
-              <p style={{ textTransform: 'uppercase', letterSpacing: '0.2em', color: '#7dd3fc', marginTop: 0 }}>Latest memory</p>
-              <h3 style={{ marginTop: 0 }}>{featured.title}</h3>
-              <p style={{ color: '#cbd5e1', lineHeight: 1.6 }}>{featured.description}</p>
-              <p style={{ color: '#94a3b8' }}>Location: {featured.location}</p>
-              <p style={{ color: '#94a3b8' }}>Type: {featured.type}</p>
-            </div>
-            <div style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: 20, padding: '1rem' }}>
-              {featured.type === 'video' ? (
-                <video controls src={featured.url} style={{ width: '100%', borderRadius: 12 }} />
-              ) : (
-                <img src={featured.url} alt={featured.title} style={{ width: '100%', borderRadius: 12, objectFit: 'cover', maxHeight: 320 }} />
-              )}
-            </div>
           </section>
-        ) : null}
-
-        <section style={{ display: 'grid', gap: '1rem', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
-          {items.map((item) => (
-            <article key={item.id} style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: 20, overflow: 'hidden' }}>
-              {item.type === 'video' ? (
-                <video controls src={item.url} style={{ width: '100%', height: 180, objectFit: 'cover', background: '#020617' }} />
-              ) : (
-                <img src={item.url} alt={item.title} style={{ width: '100%', height: 180, objectFit: 'cover' }} />
-              )}
-              <div style={{ padding: '0.9rem' }}>
-                <h3 style={{ margin: '0 0 0.35rem' }}>{item.title}</h3>
-                <p style={{ margin: '0 0 0.5rem', color: '#cbd5e1', lineHeight: 1.5 }}>{item.description}</p>
-                <p style={{ margin: '0', color: '#94a3b8', fontSize: '0.92rem' }}>{item.location}</p>
-              </div>
-            </article>
-          ))}
-        </section>
+        ) : (
+          <div style={{ display: 'grid', gap: '1.5rem' }}>
+            {dayGroups.map((group) => (
+              <section key={group.key}>
+                <h2 style={{ fontSize: '1.15rem', color: '#7dd3fc', margin: '0 0 0.75rem' }}>{group.label}</h2>
+                <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
+                  {group.items.map((item) => {
+                    const globalIndex = sortedItems.indexOf(item);
+                    return (
+                      <article key={item.id} style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: 20, overflow: 'hidden', opacity: item.hidden ? 0.5 : 1 }}>
+                        <div style={{ cursor: 'pointer' }} onClick={() => setLightboxIndex(globalIndex)}>
+                          {item.type === 'video' ? (
+                            <video muted src={item.url} style={{ width: '100%', height: 180, objectFit: 'cover', background: '#020617' }} />
+                          ) : (
+                            <img src={item.url} alt={item.title} style={{ width: '100%', height: 180, objectFit: 'cover' }} />
+                          )}
+                        </div>
+                        <div style={{ padding: '0.9rem' }}>
+                          <h3 style={{ margin: '0 0 0.35rem' }}>{item.title}</h3>
+                          {editingId === item.id ? (
+                            <div style={{ display: 'grid', gap: '0.5rem' }}>
+                              <textarea
+                                value={editDraft}
+                                onChange={(event) => setEditDraft(event.target.value)}
+                                style={{ ...inputStyle, minHeight: 80 }}
+                              />
+                              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                <button type="button" style={buttonStyle} onClick={() => saveEdit(item.id)}>Save</button>
+                                <button type="button" style={{ ...buttonStyle, background: '#334155', color: 'white' }} onClick={() => setEditingId(null)}>Cancel</button>
+                              </div>
+                            </div>
+                          ) : (
+                            <p style={{ margin: '0 0 0.5rem', color: '#cbd5e1', lineHeight: 1.5 }}>{item.description}</p>
+                          )}
+                          <p style={{ margin: '0', color: '#94a3b8', fontSize: '0.92rem' }}>{item.location}</p>
+                          {role === 'admin' && editingId !== item.id ? (
+                            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.6rem' }}>
+                              <button type="button" style={smallButtonStyle} onClick={() => startEdit(item)}>Edit</button>
+                              <button type="button" style={smallButtonStyle} onClick={() => toggleHidden(item)}>
+                                {item.hidden ? 'Unhide' : 'Hide from guests'}
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              </section>
+            ))}
+            {sortedItems.length === 0 ? <p style={{ color: '#94a3b8' }}>No photos yet.</p> : null}
+          </div>
+        )}
       </div>
+
+      {lightboxIndex !== null ? (
+        <Lightbox
+          items={sortedItems}
+          index={lightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+          onNavigate={setLightboxIndex}
+        />
+      ) : null}
     </div>
   );
 }
@@ -413,4 +268,20 @@ const buttonStyle: CSSProperties = {
   color: '#07111f',
   cursor: 'pointer',
   fontWeight: 700,
+};
+
+const smallButtonStyle: CSSProperties = {
+  padding: '0.4rem 0.7rem',
+  borderRadius: 8,
+  border: '1px solid #334155',
+  background: 'transparent',
+  color: '#cbd5e1',
+  cursor: 'pointer',
+  fontSize: '0.85rem',
+};
+
+const linkStyle: CSSProperties = {
+  color: '#7dd3fc',
+  textDecoration: 'none',
+  fontWeight: 600,
 };

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { buildUploadKey, createUploadUrl } from '@/app/lib/s3';
-import { requireSession } from '@/app/lib/auth';
+import { requireAdmin } from '@/app/lib/auth';
 import { ensureConfigLoaded } from '@/app/lib/runtime-config';
 
 interface PresignRequestItem {
@@ -10,7 +10,7 @@ interface PresignRequestItem {
 
 export async function POST(request: NextRequest) {
   await ensureConfigLoaded();
-  if (!(await requireSession(request))) {
+  if (!(await requireAdmin(request))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

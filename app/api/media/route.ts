@@ -4,11 +4,12 @@ import {
   inferTypeFromFilename,
   readMediaItems,
   saveMediaItems,
+  visibleToRole,
   withViewUrls,
   type MediaItem,
   type MediaType,
 } from '@/app/lib/media';
-import { requireSession } from '@/app/lib/auth';
+import { requireSession, requireAdmin } from '@/app/lib/auth';
 import { ensureConfigLoaded } from '@/app/lib/runtime-config';
 
 interface RegisterRequestItem {
@@ -25,18 +26,19 @@ interface RegisterRequestItem {
 
 export async function GET(request: NextRequest) {
   await ensureConfigLoaded();
-  if (!(await requireSession(request))) {
+  const session = await requireSession(request);
+  if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   const items = await readMediaItems();
-  const withUrls = await withViewUrls(items);
+  const withUrls = await withViewUrls(visibleToRole(items, session.role));
   return NextResponse.json(withUrls);
 }
 
 export async function POST(request: NextRequest) {
   await ensureConfigLoaded();
-  if (!(await requireSession(request))) {
+  if (!(await requireAdmin(request))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

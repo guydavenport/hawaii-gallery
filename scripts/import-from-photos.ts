@@ -79,6 +79,8 @@ interface PhotoRecord {
   ismovie: boolean;
   ai_caption: string | null;
   place: PlaceInfo | null;
+  latitude: number | null;
+  longitude: number | null;
 }
 
 function runOsxphotos(args: string[]) {
@@ -234,6 +236,8 @@ async function main() {
       description,
       type,
       location,
+      latitude: record.latitude ?? undefined,
+      longitude: record.longitude ?? undefined,
       createdAt,
       key,
       filename,

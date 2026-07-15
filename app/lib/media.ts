@@ -17,6 +17,7 @@ export interface MediaItem {
   filename: string;
   owner: string;
   sourceUuid?: string;
+  hidden?: boolean;
 }
 
 export interface MediaItemWithUrl extends MediaItem {
@@ -42,7 +43,7 @@ export async function readMediaItems(): Promise<MediaItem[]> {
 
 export async function writeMediaItems(items: MediaItem[]) {
   await ensureStore();
-  const sorted = [...items].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const sorted = [...items].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   await fs.writeFile(DATA_PATH, JSON.stringify(sorted, null, 2) + '\n', 'utf8');
 }
 
@@ -58,6 +59,24 @@ export async function saveMediaItems(newItems: MediaItem[]) {
   items.push(...newItems);
   await writeMediaItems(items);
   return newItems;
+}
+
+export async function updateMediaItem(
+  id: string,
+  updates: Partial<Pick<MediaItem, 'description' | 'hidden' | 'title' | 'location'>>
+): Promise<MediaItem | null> {
+  const items = await readMediaItems();
+  const index = items.findIndex((item) => item.id === id);
+  if (index === -1) return null;
+
+  items[index] = { ...items[index], ...updates };
+  await writeMediaItems(items);
+  return items[index];
+}
+
+export function visibleToRole(items: MediaItem[], role: 'admin' | 'guest'): MediaItem[] {
+  if (role === 'admin') return items;
+  return items.filter((item) => !item.hidden);
 }
 
 export async function withViewUrls(items: MediaItem[]): Promise<MediaItemWithUrl[]> {

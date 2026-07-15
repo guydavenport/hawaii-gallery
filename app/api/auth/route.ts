@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyCognitoCredentials } from '@/app/lib/cognito';
-import { createSessionToken, SESSION_COOKIE_NAME } from '@/app/lib/auth';
+import { createSessionToken, requireSession, timingSafeEqual, SESSION_COOKIE_NAME } from '@/app/lib/auth';
 import { ensureConfigLoaded } from '@/app/lib/runtime-config';
+
+export async function GET(request: NextRequest) {
+  await ensureConfigLoaded();
+  const session = await requireSession(request);
+  if (!session) {
+    return NextResponse.json({ authenticated: false });
+  }
+  return NextResponse.json({ authenticated: true, username: session.username, role: session.role });
+}
 
 export async function POST(request: NextRequest) {
   await ensureConfigLoaded();
@@ -10,17 +19,28 @@ export async function POST(request: NextRequest) {
   const email = data?.email?.toString().trim().toLowerCase() || '';
   const password = data?.password?.toString() || '';
 
-  if (!email || !password) {
-    return NextResponse.json({ error: 'Email and password are required' }, { status: 400 });
+  if (!password) {
+    return NextResponse.json({ error: 'Password is required' }, { status: 400 });
   }
 
-  const valid = await verifyCognitoCredentials(email, password);
-  if (!valid) {
-    return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
+  let session: { username: string; role: 'admin' | 'guest' };
+
+  if (email) {
+    const valid = await verifyCognitoCredentials(email, password);
+    if (!valid) {
+      return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
+    }
+    session = { username: email, role: 'admin' };
+  } else {
+    const guestPassword = process.env.GUEST_PASSWORD || '';
+    if (!guestPassword || !timingSafeEqual(password, guestPassword)) {
+      return NextResponse.json({ error: 'Invalid password' }, { status: 401 });
+    }
+    session = { username: 'guest', role: 'guest' };
   }
 
-  const { token, maxAge } = await createSessionToken(email);
-  const response = NextResponse.json({ ok: true, email });
+  const { token, maxAge } = await createSessionToken(session);
+  const response = NextResponse.json({ ok: true, username: session.username, role: session.role });
   response.cookies.set(SESSION_COOKIE_NAME, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',

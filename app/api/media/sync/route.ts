@@ -8,7 +8,7 @@ import {
   type MediaItem,
   type MediaType,
 } from '@/app/lib/media';
-import { requireSession } from '@/app/lib/auth';
+import { requireAdmin } from '@/app/lib/auth';
 import { ensureConfigLoaded } from '@/app/lib/runtime-config';
 
 function filenameFromKey(key: string) {
@@ -19,7 +19,7 @@ function filenameFromKey(key: string) {
 
 export async function GET(request: NextRequest) {
   await ensureConfigLoaded();
-  if (!(await requireSession(request))) {
+  if (!(await requireAdmin(request))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -57,7 +57,7 @@ interface ApplyAddItem {
 
 export async function POST(request: NextRequest) {
   await ensureConfigLoaded();
-  if (!(await requireSession(request))) {
+  if (!(await requireAdmin(request))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

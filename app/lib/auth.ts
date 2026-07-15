@@ -3,6 +3,13 @@ import type { NextRequest } from 'next/server';
 export const SESSION_COOKIE_NAME = 'session';
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 
+export type Role = 'admin' | 'guest';
+
+export interface Session {
+  username: string;
+  role: Role;
+}
+
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -43,7 +50,7 @@ function base64UrlDecode(value: string): string {
   return decoder.decode(bytes);
 }
 
-function timingSafeEqual(a: string, b: string): boolean {
+export function timingSafeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   let diff = 0;
   for (let i = 0; i < a.length; i++) {
@@ -52,15 +59,15 @@ function timingSafeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-export async function createSessionToken(username: string): Promise<{ token: string; maxAge: number }> {
+export async function createSessionToken(session: Session): Promise<{ token: string; maxAge: number }> {
   const expires = Math.floor(Date.now() / 1000) + SESSION_MAX_AGE_SECONDS;
-  const payload = base64UrlEncode(JSON.stringify({ u: username, e: expires }));
+  const payload = base64UrlEncode(JSON.stringify({ u: session.username, r: session.role, e: expires }));
   const key = await getKey();
   const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(payload));
   return { token: `${payload}.${toHex(signature)}`, maxAge: SESSION_MAX_AGE_SECONDS };
 }
 
-export async function verifySessionToken(token: string | undefined | null): Promise<string | null> {
+export async function verifySessionToken(token: string | undefined | null): Promise<Session | null> {
   if (!token) return null;
   const dotIndex = token.indexOf('.');
   if (dotIndex === -1) return null;
@@ -74,15 +81,25 @@ export async function verifySessionToken(token: string | undefined | null): Prom
   if (!timingSafeEqual(expectedHex, signatureHex)) return null;
 
   try {
-    const { u: username, e: expires } = JSON.parse(base64UrlDecode(payload)) as { u: string; e: number };
+    const { u: username, r: role, e: expires } = JSON.parse(base64UrlDecode(payload)) as {
+      u: string;
+      r: Role;
+      e: number;
+    };
     if (!Number.isFinite(expires) || expires < Math.floor(Date.now() / 1000)) return null;
-    return username;
+    if (role !== 'admin' && role !== 'guest') return null;
+    return { username, role };
   } catch {
     return null;
   }
 }
 
-export async function requireSession(request: NextRequest): Promise<string | null> {
+export async function requireSession(request: NextRequest): Promise<Session | null> {
   const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
   return verifySessionToken(token);
+}
+
+export async function requireAdmin(request: NextRequest): Promise<Session | null> {
+  const session = await requireSession(request);
+  return session?.role === 'admin' ? session : null;
 }
