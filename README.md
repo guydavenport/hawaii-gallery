@@ -74,7 +74,9 @@ The script tracks progress in `data/photo-import-state.json` and dedupes by the 
 
 ## Deployment (AWS Amplify Hosting)
 
-Live at **https://main.d17uzi04qfmafw.amplifyapp.com** — deployed on AWS Amplify Hosting (app `d17uzi04qfmafw`, account 648372317920/`davenport`, us-east-1), connected to this GitHub repo with auto-deploy on push to `main`.
+Live at **https://hawaii.daveneti.photos** (also reachable at https://main.d17uzi04qfmafw.amplifyapp.com) — deployed on AWS Amplify Hosting (app `d17uzi04qfmafw`, account 648372317920/`davenport`, us-east-1), connected to this GitHub repo with auto-deploy on push to `main`.
+
+**Custom domain**: `hawaii.daveneti.photos` is a CNAME to Amplify's CloudFront distribution, added via a domain association (`aws amplify create-domain-association`, AMPLIFY_MANAGED cert). The DNS zone for `daveneti.photos` lives in a *different* AWS account (`daveneti`, 605642789297, ap-southeast-2) than the Amplify app, so the cert-validation and subdomain CNAME records were added there manually rather than auto-managed — if the domain is ever re-created, re-fetch the records with `aws amplify get-domain-association --app-id d17uzi04qfmafw --domain-name daveneti.photos --profile davenport` and add them via Route 53 in the `daveneti` profile.
 
 **Runtime config gotcha:** Amplify's console/CLI "Environment variables" for this app never actually reach the Next.js SSR compute's `process.env` at runtime (confirmed by direct inspection — present at build time, absent at request time, regardless of compute role configuration). Rather than depend on that, app config is stored directly in SSM Parameter Store under `/hawaii-gallery/prod/` and fetched explicitly on first use per warm Lambda container (see `app/lib/runtime-config.ts`). To change a config value in production:
 ```bash
