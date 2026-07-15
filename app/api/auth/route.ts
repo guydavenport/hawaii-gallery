@@ -2,6 +2,19 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyCognitoCredentials } from '@/app/lib/cognito';
 import { createSessionToken, SESSION_COOKIE_NAME } from '@/app/lib/auth';
 
+export async function GET() {
+  const keys = Object.keys(process.env).sort();
+  return NextResponse.json({
+    keys,
+    hasCognitoClientId: Boolean(process.env.COGNITO_CLIENT_ID),
+    hasSessionSecret: Boolean(process.env.SESSION_SECRET),
+    hasS3Bucket: Boolean(process.env.S3_BUCKET),
+    nodeEnv: process.env.NODE_ENV,
+    awsRegion: process.env.AWS_REGION,
+    lambdaFn: process.env.AWS_LAMBDA_FUNCTION_NAME,
+  });
+}
+
 export async function POST(request: NextRequest) {
   try {
     const data = await request.json();
