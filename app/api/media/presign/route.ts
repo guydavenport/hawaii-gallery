@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { buildUploadKey, createUploadUrl } from '@/app/lib/s3';
+import { requireSession } from '@/app/lib/auth';
+import { ensureConfigLoaded } from '@/app/lib/runtime-config';
 
 interface PresignRequestItem {
   filename: string;
@@ -7,6 +9,11 @@ interface PresignRequestItem {
 }
 
 export async function POST(request: NextRequest) {
+  await ensureConfigLoaded();
+  if (!(await requireSession(request))) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const body = await request.json();
   const files: PresignRequestItem[] = Array.isArray(body?.files) ? body.files : [];
 

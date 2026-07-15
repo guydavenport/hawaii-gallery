@@ -8,6 +8,8 @@ import {
   type MediaItem,
   type MediaType,
 } from '@/app/lib/media';
+import { requireSession } from '@/app/lib/auth';
+import { ensureConfigLoaded } from '@/app/lib/runtime-config';
 
 function filenameFromKey(key: string) {
   const withoutPrefix = key.split('/').pop() || key;
@@ -15,7 +17,12 @@ function filenameFromKey(key: string) {
   return dashIndex >= 0 ? withoutPrefix.slice(dashIndex + 1) : withoutPrefix;
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  await ensureConfigLoaded();
+  if (!(await requireSession(request))) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const [items, objects] = await Promise.all([readMediaItems(), listUploadedObjects()]);
 
   const knownKeys = new Set(items.map((item) => item.key));
@@ -49,6 +56,11 @@ interface ApplyAddItem {
 }
 
 export async function POST(request: NextRequest) {
+  await ensureConfigLoaded();
+  if (!(await requireSession(request))) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const body = await request.json();
   const addItems: ApplyAddItem[] = Array.isArray(body?.add) ? body.add : [];
   const removeIds: string[] = Array.isArray(body?.removeIds) ? body.removeIds : [];

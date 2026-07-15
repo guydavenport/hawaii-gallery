@@ -1,3 +1,5 @@
+import type { NextRequest } from 'next/server';
+
 export const SESSION_COOKIE_NAME = 'session';
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 
@@ -78,4 +80,9 @@ export async function verifySessionToken(token: string | undefined | null): Prom
   } catch {
     return null;
   }
+}
+
+export async function requireSession(request: NextRequest): Promise<string | null> {
+  const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
+  return verifySessionToken(token);
 }

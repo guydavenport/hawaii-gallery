@@ -8,6 +8,8 @@ import {
   type MediaItem,
   type MediaType,
 } from '@/app/lib/media';
+import { requireSession } from '@/app/lib/auth';
+import { ensureConfigLoaded } from '@/app/lib/runtime-config';
 
 interface RegisterRequestItem {
   key: string;
@@ -21,13 +23,23 @@ interface RegisterRequestItem {
   longitude?: number;
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  await ensureConfigLoaded();
+  if (!(await requireSession(request))) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const items = await readMediaItems();
   const withUrls = await withViewUrls(items);
   return NextResponse.json(withUrls);
 }
 
 export async function POST(request: NextRequest) {
+  await ensureConfigLoaded();
+  if (!(await requireSession(request))) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const body = await request.json();
     const rawItems: RegisterRequestItem[] = Array.isArray(body?.items)
