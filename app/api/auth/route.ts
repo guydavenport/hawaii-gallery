@@ -1,17 +1,41 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { verifyCognitoCredentials } from '@/app/lib/cognito';
+import { createSessionToken, SESSION_COOKIE_NAME } from '@/app/lib/auth';
 
 export async function POST(request: NextRequest) {
   const data = await request.json();
-  const email = data?.email?.toString().trim() || '';
+  const email = data?.email?.toString().trim().toLowerCase() || '';
   const password = data?.password?.toString() || '';
 
   if (!email || !password) {
     return NextResponse.json({ error: 'Email and password are required' }, { status: 400 });
   }
 
-  return NextResponse.json({
-    ok: true,
-    message: 'Demo auth accepted. Replace this route with AWS Cognito or Amplify auth in production.',
-    email,
+  const valid = await verifyCognitoCredentials(email, password);
+  if (!valid) {
+    return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
+  }
+
+  const { token, maxAge } = await createSessionToken(email);
+  const response = NextResponse.json({ ok: true, email });
+  response.cookies.set(SESSION_COOKIE_NAME, token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge,
   });
+  return response;
+}
+
+export async function DELETE() {
+  const response = NextResponse.json({ ok: true });
+  response.cookies.set(SESSION_COOKIE_NAME, '', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 0,
+  });
+  return response;
 }

@@ -16,6 +16,7 @@ export interface MediaItem {
   key: string;
   filename: string;
   owner: string;
+  sourceUuid?: string;
 }
 
 export interface MediaItemWithUrl extends MediaItem {
@@ -41,19 +42,20 @@ export async function readMediaItems(): Promise<MediaItem[]> {
 
 export async function writeMediaItems(items: MediaItem[]) {
   await ensureStore();
-  await fs.writeFile(DATA_PATH, JSON.stringify(items, null, 2) + '\n', 'utf8');
+  const sorted = [...items].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  await fs.writeFile(DATA_PATH, JSON.stringify(sorted, null, 2) + '\n', 'utf8');
 }
 
 export async function saveMediaItem(item: MediaItem) {
   const items = await readMediaItems();
-  items.unshift(item);
+  items.push(item);
   await writeMediaItems(items);
   return item;
 }
 
 export async function saveMediaItems(newItems: MediaItem[]) {
   const items = await readMediaItems();
-  items.unshift(...newItems);
+  items.push(...newItems);
   await writeMediaItems(items);
   return newItems;
 }

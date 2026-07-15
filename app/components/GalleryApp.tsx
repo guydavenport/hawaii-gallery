@@ -50,11 +50,20 @@ export default function GalleryApp() {
   const [selectedRemoveIds, setSelectedRemoveIds] = useState<Set<string>>(new Set());
   const [syncing, setSyncing] = useState(false);
 
-  function loadItems() {
-    fetch('/api/media')
-      .then((res) => res.json())
-      .then((data) => setItems(Array.isArray(data) ? data : []))
-      .catch(() => setItems([]));
+  async function loadItems() {
+    try {
+      const res = await fetch('/api/media');
+      if (!res.ok) {
+        setIsLoggedIn(false);
+        setItems([]);
+        return;
+      }
+      const data = await res.json();
+      setIsLoggedIn(true);
+      setItems(Array.isArray(data) ? data : []);
+    } catch {
+      setItems([]);
+    }
   }
 
   useEffect(() => {
@@ -63,7 +72,7 @@ export default function GalleryApp() {
 
   async function handleLogin(event: FormEvent) {
     event.preventDefault();
-    setStatus('Signing in with demo auth...');
+    setStatus('Signing in...');
     const response = await fetch('/api/auth', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -71,10 +80,20 @@ export default function GalleryApp() {
     });
     if (response.ok) {
       setIsLoggedIn(true);
+      setPassword('');
       setStatus('Signed in. You can upload media to your gallery.');
+      loadItems();
     } else {
-      setStatus('Login failed');
+      const error = await response.json().catch(() => ({}));
+      setStatus(error.error || 'Login failed');
     }
+  }
+
+  async function handleLogout() {
+    await fetch('/api/auth', { method: 'DELETE' });
+    setIsLoggedIn(false);
+    setItems([]);
+    setStatus('Signed out.');
   }
 
   async function handleUpload(event: FormEvent) {
@@ -236,12 +255,20 @@ export default function GalleryApp() {
 
         <section style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: 20, padding: '1.2rem' }}>
           <h2 style={{ marginTop: 0 }}>Sign in</h2>
-          <form onSubmit={handleLogin} style={{ display: 'grid', gap: '0.75rem', maxWidth: 480 }}>
-            <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email" style={inputStyle} />
-            <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password" type="password" style={inputStyle} />
-            <button type="submit" style={buttonStyle}>Demo sign in</button>
-          </form>
-          {isLoggedIn ? <p style={{ color: '#86efac' }}>Signed in. Uploads are enabled.</p> : <p style={{ color: '#cbd5e1' }}>This is a demo auth flow. Replace it with Cognito in production.</p>}
+          {isLoggedIn ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <p style={{ color: '#86efac', margin: 0 }}>Signed in. Uploads are enabled.</p>
+              <button type="button" style={{ ...buttonStyle, background: '#334155', color: 'white' }} onClick={handleLogout}>
+                Sign out
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleLogin} style={{ display: 'grid', gap: '0.75rem', maxWidth: 480 }}>
+              <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email" style={inputStyle} />
+              <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password" type="password" style={inputStyle} />
+              <button type="submit" style={buttonStyle}>Sign in</button>
+            </form>
+          )}
         </section>
 
         <section style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: 20, padding: '1.2rem' }}>
