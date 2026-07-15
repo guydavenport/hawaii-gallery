@@ -26,7 +26,7 @@ export default function AdminApp() {
   const [title, setTitle] = useState('');
   const [location, setLocation] = useState('Waikiki');
   const [type, setType] = useState<'photo' | 'video'>('photo');
-  const [owner, setOwner] = useState('guest');
+  const [owner, setOwner] = useState('guy');
   const [files, setFiles] = useState<File[]>([]);
   const [status, setStatus] = useState('Ready to upload');
 
@@ -224,7 +224,7 @@ export default function AdminApp() {
               <option value="photo">Photo</option>
               <option value="video">Video</option>
             </select>
-            <input value={owner} onChange={(event) => setOwner(event.target.value)} placeholder="Owner" style={inputStyle} />
+            <input value={owner} onChange={(event) => setOwner(event.target.value)} placeholder="Photographer" style={inputStyle} />
             <input
               type="file"
               accept="image/*,video/*"

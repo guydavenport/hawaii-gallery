@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties, FormEvent } from 'react';
 import Link from 'next/link';
+import JSZip from 'jszip';
 import type { MediaItem } from '@/app/lib/types';
 import Lightbox from '@/app/components/Lightbox';
+import { downloadFile } from '@/app/lib/download';
 
 const HAWAII_TZ = 'Pacific/Honolulu';
 
@@ -34,7 +36,11 @@ export default function GalleryApp() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitleDraft, setEditTitleDraft] = useState('');
   const [editDraft, setEditDraft] = useState('');
+  const [editOwnerDraft, setEditOwnerDraft] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [downloading, setDownloading] = useState(false);
 
   async function loadItems() {
     const res = await fetch('/api/media');
@@ -97,38 +103,77 @@ export default function GalleryApp() {
     setStatus('Signed out.');
   }
 
+  async function updateItem(
+    id: string,
+    updates: Partial<Pick<MediaItem, 'title' | 'description' | 'owner' | 'hidden'>>
+  ): Promise<MediaItem | null> {
+    const response = await fetch(`/api/media/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    });
+    if (!response.ok) {
+      setStatus('Failed to save changes');
+      return null;
+    }
+    const updated: MediaItem = await response.json();
+    setItems((prev) => prev.map((item) => (item.id === id ? { ...item, ...updated } : item)));
+    return updated;
+  }
+
   function startEdit(item: MediaItem) {
     setEditingId(item.id);
     setEditTitleDraft(item.title);
     setEditDraft(item.description);
+    setEditOwnerDraft(item.owner);
   }
 
   async function saveEdit(id: string) {
-    const response = await fetch(`/api/media/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: editTitleDraft, description: editDraft }),
-    });
-    if (response.ok) {
-      const updated: MediaItem = await response.json();
-      setItems((prev) => prev.map((item) => (item.id === id ? { ...item, ...updated } : item)));
-      setEditingId(null);
-    } else {
-      setStatus('Failed to save changes');
-    }
+    const updated = await updateItem(id, { title: editTitleDraft, description: editDraft, owner: editOwnerDraft });
+    if (updated) setEditingId(null);
   }
 
   async function toggleHidden(item: MediaItem) {
-    const response = await fetch(`/api/media/${item.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hidden: !item.hidden }),
+    await updateItem(item.id, { hidden: !item.hidden });
+  }
+
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
     });
-    if (response.ok) {
-      const updated: MediaItem = await response.json();
-      setItems((prev) => prev.map((entry) => (entry.id === item.id ? { ...entry, ...updated } : entry)));
-    } else {
-      setStatus('Failed to update visibility');
+  }
+
+  async function downloadSelected() {
+    if (selectedIds.size === 0) return;
+    setDownloading(true);
+    setStatus(`Zipping ${selectedIds.size} item(s)...`);
+    try {
+      const zip = new JSZip();
+      const selected = sortedItems.filter((item) => selectedIds.has(item.id));
+      await Promise.all(
+        selected.map(async (item) => {
+          const response = await fetch(item.url, { cache: 'no-store' });
+          const blob = await response.blob();
+          zip.file(item.filename, blob);
+        })
+      );
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const objectUrl = URL.createObjectURL(zipBlob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = 'hawaii-gallery-photos.zip';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+      setStatus('');
+    } catch {
+      setStatus('Failed to download selected items');
+    } finally {
+      setDownloading(false);
     }
   }
 
@@ -176,6 +221,18 @@ export default function GalleryApp() {
                     &#9776; Jump to date
                   </button>
                 ) : null}
+                {sortedItems.length > 0 ? (
+                  <button
+                    type="button"
+                    style={smallButtonStyle}
+                    onClick={() => {
+                      setSelectMode((prev) => !prev);
+                      setSelectedIds(new Set());
+                    }}
+                  >
+                    {selectMode ? 'Cancel select' : 'Select'}
+                  </button>
+                ) : null}
                 <Link href="/map" style={linkStyle}>Map</Link>
                 {role === 'admin' ? <Link href="/admin" style={linkStyle}>Admin</Link> : null}
                 <button type="button" style={{ ...buttonStyle, background: '#334155', color: 'white' }} onClick={handleLogout}>
@@ -201,13 +258,45 @@ export default function GalleryApp() {
           <div style={{ display: 'grid', gap: '1.5rem' }}>
             {dayGroups.map((group) => (
               <section key={group.key} id={`day-${group.key}`} style={{ scrollMarginTop: '1rem' }}>
-                <h2 style={{ fontSize: '1.15rem', color: '#7dd3fc', margin: '0 0 0.75rem' }}>{group.label}</h2>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', margin: '0 0 0.75rem' }}>
+                  <h2 style={{ fontSize: '1.15rem', color: '#7dd3fc', margin: 0 }}>{group.label}</h2>
+                  {selectMode ? (
+                    <button
+                      type="button"
+                      style={smallButtonStyle}
+                      onClick={() =>
+                        setSelectedIds((prev) => {
+                          const next = new Set(prev);
+                          const allSelected = group.items.every((item) => next.has(item.id));
+                          for (const item of group.items) {
+                            if (allSelected) next.delete(item.id);
+                            else next.add(item.id);
+                          }
+                          return next;
+                        })
+                      }
+                    >
+                      {group.items.every((item) => selectedIds.has(item.id)) ? 'Deselect day' : 'Select day'}
+                    </button>
+                  ) : null}
+                </div>
                 <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
                   {group.items.map((item) => {
                     const globalIndex = sortedItems.indexOf(item);
                     return (
-                      <article key={item.id} style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: 20, overflow: 'hidden', opacity: item.hidden ? 0.5 : 1 }}>
-                        <div style={{ cursor: 'pointer' }} onClick={() => setLightboxIndex(globalIndex)}>
+                      <article key={item.id} style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: 20, overflow: 'hidden', opacity: item.hidden ? 0.5 : 1, position: 'relative' }}>
+                        {selectMode ? (
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(item.id)}
+                            onChange={() => toggleSelected(item.id)}
+                            style={{ position: 'absolute', top: 10, left: 10, zIndex: 1, width: 20, height: 20 }}
+                          />
+                        ) : null}
+                        <div
+                          style={{ cursor: 'pointer' }}
+                          onClick={() => (selectMode ? toggleSelected(item.id) : setLightboxIndex(globalIndex))}
+                        >
                           {item.type === 'video' ? (
                             <video muted src={item.url} style={{ width: '100%', height: 180, objectFit: 'cover', background: '#020617' }} />
                           ) : (
@@ -229,6 +318,12 @@ export default function GalleryApp() {
                                 placeholder="Description"
                                 style={{ ...inputStyle, minHeight: 80 }}
                               />
+                              <input
+                                value={editOwnerDraft}
+                                onChange={(event) => setEditOwnerDraft(event.target.value)}
+                                placeholder="Photographer"
+                                style={inputStyle}
+                              />
                               <div style={{ display: 'flex', gap: '0.5rem' }}>
                                 <button type="button" style={buttonStyle} onClick={() => saveEdit(item.id)}>Save</button>
                                 <button type="button" style={{ ...buttonStyle, background: '#334155', color: 'white' }} onClick={() => setEditingId(null)}>Cancel</button>
@@ -241,12 +336,20 @@ export default function GalleryApp() {
                             </>
                           )}
                           <p style={{ margin: '0', color: '#94a3b8', fontSize: '0.92rem' }}>{item.location}</p>
-                          {role === 'admin' && editingId !== item.id ? (
-                            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.6rem' }}>
-                              <button type="button" style={smallButtonStyle} onClick={() => startEdit(item)}>Edit</button>
-                              <button type="button" style={smallButtonStyle} onClick={() => toggleHidden(item)}>
-                                {item.hidden ? 'Unhide' : 'Hide from guests'}
+                          <p style={{ margin: '0.15rem 0 0', color: '#64748b', fontSize: '0.85rem' }}>Photo by {item.owner}</p>
+                          {editingId !== item.id ? (
+                            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.6rem', flexWrap: 'wrap' }}>
+                              <button type="button" style={smallButtonStyle} onClick={() => downloadFile(item.url, item.filename)}>
+                                Download
                               </button>
+                              {role === 'admin' ? (
+                                <>
+                                  <button type="button" style={smallButtonStyle} onClick={() => startEdit(item)}>Edit</button>
+                                  <button type="button" style={smallButtonStyle} onClick={() => toggleHidden(item)}>
+                                    {item.hidden ? 'Unhide' : 'Hide from guests'}
+                                  </button>
+                                </>
+                              ) : null}
                             </div>
                           ) : null}
                         </div>
@@ -284,12 +387,20 @@ export default function GalleryApp() {
         </div>
       </nav>
 
+      {selectMode && selectedIds.size > 0 ? (
+        <button type="button" style={floatingButtonStyle} onClick={downloadSelected} disabled={downloading}>
+          {downloading ? 'Zipping...' : `Download ${selectedIds.size} selected`}
+        </button>
+      ) : null}
+
       {lightboxIndex !== null ? (
         <Lightbox
           items={sortedItems}
           index={lightboxIndex}
+          role={role}
           onClose={() => setLightboxIndex(null)}
           onNavigate={setLightboxIndex}
+          onUpdate={updateItem}
         />
       ) : null}
     </div>
@@ -362,4 +473,19 @@ const dayMenuItemStyle: CSSProperties = {
   color: '#e2e8f0',
   cursor: 'pointer',
   fontSize: '0.92rem',
+};
+
+const floatingButtonStyle: CSSProperties = {
+  position: 'fixed',
+  bottom: '1.5rem',
+  right: '1.5rem',
+  padding: '0.9rem 1.3rem',
+  borderRadius: 999,
+  border: 'none',
+  background: '#38bdf8',
+  color: '#07111f',
+  cursor: 'pointer',
+  fontWeight: 700,
+  boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+  zIndex: 900,
 };

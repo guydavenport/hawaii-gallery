@@ -112,7 +112,7 @@ export async function deleteMediaItems(ids: string[]) {
 
 export async function updateMediaItem(
   id: string,
-  updates: Partial<Pick<MediaItem, 'description' | 'hidden' | 'title' | 'location'>>
+  updates: Partial<Pick<MediaItem, 'description' | 'hidden' | 'title' | 'location' | 'owner'>>
 ): Promise<MediaItem | null> {
   const entries = Object.entries(updates).filter(([, value]) => value !== undefined);
   if (entries.length === 0) return null;
