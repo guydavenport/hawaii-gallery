@@ -33,6 +33,7 @@ export default function GalleryApp() {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState('');
+  const [menuOpen, setMenuOpen] = useState(false);
 
   async function loadItems() {
     const res = await fetch('/api/media');
@@ -148,6 +149,11 @@ export default function GalleryApp() {
     return groups;
   }, [sortedItems]);
 
+  function scrollToDay(key: string) {
+    document.getElementById(`day-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setMenuOpen(false);
+  }
+
   if (checkingSession) {
     return null;
   }
@@ -163,6 +169,11 @@ export default function GalleryApp() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
             {isLoggedIn ? (
               <>
+                {dayGroups.length > 0 ? (
+                  <button type="button" style={smallButtonStyle} onClick={() => setMenuOpen(true)}>
+                    &#9776; Jump to date
+                  </button>
+                ) : null}
                 <Link href="/map" style={linkStyle}>Map</Link>
                 {role === 'admin' ? <Link href="/admin" style={linkStyle}>Admin</Link> : null}
                 <button type="button" style={{ ...buttonStyle, background: '#334155', color: 'white' }} onClick={handleLogout}>
@@ -187,7 +198,7 @@ export default function GalleryApp() {
         ) : (
           <div style={{ display: 'grid', gap: '1.5rem' }}>
             {dayGroups.map((group) => (
-              <section key={group.key}>
+              <section key={group.key} id={`day-${group.key}`} style={{ scrollMarginTop: '1rem' }}>
                 <h2 style={{ fontSize: '1.15rem', color: '#7dd3fc', margin: '0 0 0.75rem' }}>{group.label}</h2>
                 <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
                   {group.items.map((item) => {
@@ -239,6 +250,29 @@ export default function GalleryApp() {
         )}
       </div>
 
+      {menuOpen ? <div style={backdropStyle} onClick={() => setMenuOpen(false)} /> : null}
+      <nav style={{ ...sideMenuStyle, transform: menuOpen ? 'translateX(0)' : 'translateX(-100%)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Jump to date</h2>
+          <button type="button" style={smallButtonStyle} onClick={() => setMenuOpen(false)} aria-label="Close">
+            &times;
+          </button>
+        </div>
+        <div style={{ display: 'grid', gap: '0.4rem' }}>
+          {dayGroups.map((group) => (
+            <button
+              key={group.key}
+              type="button"
+              onClick={() => scrollToDay(group.key)}
+              style={dayMenuItemStyle}
+            >
+              {group.label}
+              <span style={{ color: '#64748b', fontWeight: 400 }}> ({group.items.length})</span>
+            </button>
+          ))}
+        </div>
+      </nav>
+
       {lightboxIndex !== null ? (
         <Lightbox
           items={sortedItems}
@@ -284,4 +318,37 @@ const linkStyle: CSSProperties = {
   color: '#7dd3fc',
   textDecoration: 'none',
   fontWeight: 600,
+};
+
+const backdropStyle: CSSProperties = {
+  position: 'fixed',
+  inset: 0,
+  background: 'rgba(2, 6, 23, 0.6)',
+  zIndex: 1099,
+};
+
+const sideMenuStyle: CSSProperties = {
+  position: 'fixed',
+  top: 0,
+  left: 0,
+  bottom: 0,
+  width: 280,
+  maxWidth: '85vw',
+  background: '#0f172a',
+  borderRight: '1px solid #334155',
+  padding: '1.25rem',
+  overflowY: 'auto',
+  zIndex: 1100,
+  transition: 'transform 0.25s ease',
+};
+
+const dayMenuItemStyle: CSSProperties = {
+  textAlign: 'left',
+  padding: '0.6rem 0.7rem',
+  borderRadius: 8,
+  border: '1px solid transparent',
+  background: 'transparent',
+  color: '#e2e8f0',
+  cursor: 'pointer',
+  fontSize: '0.92rem',
 };
