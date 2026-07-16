@@ -73,6 +73,15 @@ npm run import-photos                            # import everything since the l
 npm run import-photos -- --dry-run               # preview what would be imported, no upload
 ```
 
+## Importing photos shared by others (WhatsApp, AirDrop, etc.)
+
+`scripts/import-from-downloads.ts` picks up any file in `~/Downloads` matching WhatsApp's export naming (`WhatsApp Image/Video YYYY-MM-DD at HH.MM.SS...`), uploads it to S3, and registers it with the capture time parsed from the filename (WhatsApp strips EXIF/GPS, so there's no location or AI caption — just Hawaii + the date). Dedupes by filename, so re-running is safe.
+
+```bash
+npx tsx scripts/import-from-downloads.ts --owner "Marite"              # import, crediting a specific photographer
+npx tsx scripts/import-from-downloads.ts --owner "Marite" --dry-run    # preview only
+```
+
 The script tracks progress in `data/photo-import-state.json` and dedupes by the Photos library's own UUID (stored as `sourceUuid` on each media item), so re-running with an overlapping or unbounded range is always safe — already-imported items are skipped automatically. Run it with no arguments whenever new trip photos land in Photos.app.
 
 ## Deployment (AWS Amplify Hosting)
