@@ -12,7 +12,7 @@ import {
 import { requireSession, requireAdmin } from '@/app/lib/auth';
 import { ensureConfigLoaded } from '@/app/lib/runtime-config';
 import { getObjectBuffer } from '@/app/lib/s3';
-import { createAndUploadThumbnail, createAndUploadDisplayVersion } from '@/app/lib/thumbnail';
+import { createAndUploadThumbnail, createAndUploadDisplayVersion, generateThumbnailBuffer } from '@/app/lib/thumbnail';
 
 interface RegisterRequestItem {
   key: string;
@@ -62,17 +62,21 @@ export async function POST(request: NextRequest) {
         const type = raw.type || inferTypeFromFilename(raw.filename);
         const location = raw.location?.trim() || 'Hawaii';
         const owner = raw.owner?.trim() || 'guest';
-        const description = raw.description?.trim() || (await generateDescription(title, type, location));
 
         let thumbnailKey: string | undefined;
         let displayKey: string | undefined;
+        let visionBuffer: Buffer | undefined;
         try {
           const buffer = await getObjectBuffer(raw.key);
           thumbnailKey = await createAndUploadThumbnail(raw.key, buffer, type);
           displayKey = await createAndUploadDisplayVersion(raw.key, buffer, type);
+          visionBuffer = (await generateThumbnailBuffer(buffer)) ?? undefined;
         } catch (thumbError) {
           console.error('Thumbnail generation failed for', raw.key, thumbError);
         }
+
+        const description =
+          raw.description?.trim() || (await generateDescription(title, type, location, visionBuffer));
 
         const item: MediaItem = {
           id: crypto.randomUUID(),

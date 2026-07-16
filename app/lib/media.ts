@@ -174,42 +174,70 @@ export function buildFallbackDescription(title: string, type: MediaType) {
   return `A ${typeLabel} from the Hawaii trip captured as ${title.toLowerCase() || 'a memorable moment'}.`;
 }
 
-export async function generateDescription(title: string, type: MediaType, location: string) {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    return buildFallbackDescription(title, type);
-  }
+const VISION_PROMPT_TEMPLATE = (location: string) =>
+  `This photo is from a private family trip to Hawaii${location && location !== 'Hawaii' ? `, taken near ${location}` : ''}. ` +
+  `Write exactly one short, warm sentence (under 20 words) describing what is actually visible in the photo -- ` +
+  `people, activities, food, scenery, or notable details. Don't invent names for people; refer to them generically ` +
+  `("a person", "two kids"). Don't mention that it's Hawaii or add generic filler. Reply with only the sentence, no preamble.`;
+
+async function generateVisionCaption(imageBuffer: Buffer, location: string): Promise<string | null> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return null;
 
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 120,
         messages: [
           {
-            role: 'system',
-            content: 'You write concise, warm travel-photo descriptions for a private family trip gallery.',
-          },
-          {
             role: 'user',
-            content: `Create a short poetic description for a ${type} from Hawaii titled "${title}" taken near ${location || 'a beautiful spot'}.`,
+            content: [
+              {
+                type: 'image',
+                source: { type: 'base64', media_type: 'image/jpeg', data: imageBuffer.toString('base64') },
+              },
+              { type: 'text', text: VISION_PROMPT_TEMPLATE(location) },
+            ],
           },
         ],
-        temperature: 0.7,
       }),
     });
 
     if (!response.ok) {
-      throw new Error('OpenAI request failed');
+      throw new Error(`Anthropic vision request failed: ${response.status}`);
     }
 
-    const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
-    return data.choices?.[0]?.message?.content?.trim() || buildFallbackDescription(title, type);
-  } catch {
-    return buildFallbackDescription(title, type);
+    const data = (await response.json()) as { content?: Array<{ type: string; text?: string }> };
+    const text = data.content?.find((block) => block.type === 'text')?.text?.trim();
+    return text || null;
+  } catch (error) {
+    console.error('Vision caption generation failed:', error);
+    return null;
   }
+}
+
+/**
+ * Generates a description for a media item. When a JPEG image buffer is
+ * supplied for a photo and ANTHROPIC_API_KEY is configured, asks Claude's
+ * vision model to caption the actual image content; otherwise (videos, no
+ * key, no buffer, or a failed request) falls back to a generic template.
+ */
+export async function generateDescription(
+  title: string,
+  type: MediaType,
+  location: string,
+  imageBuffer?: Buffer
+): Promise<string> {
+  if (imageBuffer && type === 'photo') {
+    const caption = await generateVisionCaption(imageBuffer, location);
+    if (caption) return caption;
+  }
+  return buildFallbackDescription(title, type);
 }

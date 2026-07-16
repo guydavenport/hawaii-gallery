@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { listUploadedObjects, getObjectBuffer } from '@/app/lib/s3';
-import { createAndUploadThumbnail, createAndUploadDisplayVersion } from '@/app/lib/thumbnail';
+import { createAndUploadThumbnail, createAndUploadDisplayVersion, generateThumbnailBuffer } from '@/app/lib/thumbnail';
 import {
   deleteMediaItems,
   generateDescription,
@@ -73,17 +73,20 @@ export async function POST(request: NextRequest) {
       const type = raw.type || inferTypeFromFilename(raw.filename);
       const location = raw.location?.trim() || 'Hawaii';
       const owner = raw.owner?.trim() || 'guest';
-      const description = await generateDescription(title, type, location);
 
       let thumbnailKey: string | undefined;
       let displayKey: string | undefined;
+      let visionBuffer: Buffer | undefined;
       try {
         const buffer = await getObjectBuffer(raw.key);
         thumbnailKey = await createAndUploadThumbnail(raw.key, buffer, type);
         displayKey = await createAndUploadDisplayVersion(raw.key, buffer, type);
+        visionBuffer = (await generateThumbnailBuffer(buffer)) ?? undefined;
       } catch (thumbError) {
         console.error('Thumbnail generation failed for', raw.key, thumbError);
       }
+
+      const description = await generateDescription(title, type, location, visionBuffer);
 
       return {
         id: crypto.randomUUID(),

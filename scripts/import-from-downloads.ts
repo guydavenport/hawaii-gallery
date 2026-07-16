@@ -111,7 +111,9 @@ async function main() {
   loadEnvConfig(PROJECT_ROOT);
   const { s3Client, getBucket } = await import('../app/lib/s3');
   const { generateDescription, saveMediaItems, readMediaItems } = await import('../app/lib/media');
-  const { createAndUploadThumbnail, createAndUploadDisplayVersion } = await import('../app/lib/thumbnail');
+  const { createAndUploadThumbnail, createAndUploadDisplayVersion, generateThumbnailBuffer } = await import(
+    '../app/lib/thumbnail'
+  );
   const { reverseGeocode } = await import('../app/lib/geocode');
 
   const args = parseArgs();
@@ -175,7 +177,12 @@ async function main() {
       if (geocoded) location = geocoded;
     }
     const title = location;
-    const description = await generateDescription(title, c.parsed.type, location);
+    const description = await generateDescription(
+      title,
+      c.parsed.type,
+      location,
+      (await generateThumbnailBuffer(buffer)) ?? undefined
+    );
 
     mediaItems.push({
       id,
