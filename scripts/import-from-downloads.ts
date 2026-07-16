@@ -1,3 +1,4 @@
+import { execFileSync } from 'child_process';
 import { promises as fsp } from 'fs';
 import path from 'path';
 import os from 'os';
@@ -12,6 +13,7 @@ interface CliArgs {
   owner: string;
   location: string;
   dryRun: boolean;
+  pattern?: RegExp;
 }
 
 function parseArgs(): CliArgs {
@@ -21,6 +23,7 @@ function parseArgs(): CliArgs {
     if (args[i] === '--owner') result.owner = args[++i];
     else if (args[i] === '--location') result.location = args[++i];
     else if (args[i] === '--dry-run') result.dryRun = true;
+    else if (args[i] === '--pattern') result.pattern = new RegExp(args[++i]);
     else {
       console.error(`Unknown argument: ${args[i]}`);
       process.exit(1);
@@ -29,15 +32,59 @@ function parseArgs(): CliArgs {
   return result;
 }
 
-const NAME_PATTERN = /^WhatsApp (Image|Video) (\d{4}-\d{2}-\d{2}) at (\d{2})\.(\d{2})\.(\d{2})(?:\s*\((\d+)\))?\.(\w+)$/i;
+interface ParsedFile {
+  createdAt: string;
+  type: MediaType;
+  ext: string;
+  latitude?: number;
+  longitude?: number;
+}
 
-function parseFilename(filename: string) {
-  const match = filename.match(NAME_PATTERN);
+const WHATSAPP_PATTERN = /^WhatsApp (Image|Video) (\d{4}-\d{2}-\d{2}) at (\d{2})\.(\d{2})\.(\d{2})(?:\s*\((\d+)\))?\.(\w+)$/i;
+const MEDIA_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'heic', 'mp4', 'mov', 'm4v']);
+const VIDEO_EXTENSIONS = new Set(['mp4', 'mov', 'm4v']);
+
+function parseWhatsAppFilename(filename: string): ParsedFile | null {
+  const match = filename.match(WHATSAPP_PATTERN);
   if (!match) return null;
   const [, kind, date, hh, mm, ss, , ext] = match;
   const createdAt = new Date(`${date}T${hh}:${mm}:${ss}${HAWAII_OFFSET}`).toISOString();
   const type: MediaType = kind.toLowerCase() === 'video' ? 'video' : 'photo';
   return { createdAt, type, ext: ext.toLowerCase() };
+}
+
+function readExifMetadata(filePath: string): { createdAt: string | null; latitude?: number; longitude?: number } {
+  try {
+    const raw = execFileSync(
+      'mdls',
+      ['-name', 'kMDItemContentCreationDate', '-name', 'kMDItemLatitude', '-name', 'kMDItemLongitude', filePath],
+      { encoding: 'utf8' }
+    );
+    const dateMatch = raw.match(/kMDItemContentCreationDate\s*=\s*(.+)/);
+    const latMatch = raw.match(/kMDItemLatitude\s*=\s*(-?[\d.]+)/);
+    const lonMatch = raw.match(/kMDItemLongitude\s*=\s*(-?[\d.]+)/);
+
+    const createdAt =
+      dateMatch && !dateMatch[1].includes('(null)') ? new Date(dateMatch[1].trim()).toISOString() : null;
+    const latitude = latMatch ? Number(latMatch[1]) : undefined;
+    const longitude = lonMatch ? Number(lonMatch[1]) : undefined;
+
+    return { createdAt, latitude, longitude };
+  } catch {
+    return { createdAt: null };
+  }
+}
+
+async function parseGenericFile(filePath: string, filename: string): Promise<ParsedFile | null> {
+  const ext = path.extname(filename).slice(1).toLowerCase();
+  if (!MEDIA_EXTENSIONS.has(ext)) return null;
+
+  const exif = readExifMetadata(filePath);
+  const stat = await fsp.stat(filePath);
+  const createdAt = exif.createdAt || stat.mtime.toISOString();
+  const type: MediaType = VIDEO_EXTENSIONS.has(ext) ? 'video' : 'photo';
+
+  return { createdAt, type, ext, latitude: exif.latitude, longitude: exif.longitude };
 }
 
 function contentTypeFor(ext: string): string {
@@ -47,10 +94,14 @@ function contentTypeFor(ext: string): string {
       return 'image/jpeg';
     case 'png':
       return 'image/png';
+    case 'heic':
+      return 'image/heic';
     case 'mp4':
       return 'video/mp4';
     case 'mov':
       return 'video/quicktime';
+    case 'm4v':
+      return 'video/x-m4v';
     default:
       return 'application/octet-stream';
   }
@@ -65,11 +116,19 @@ async function main() {
   const downloadsDir = path.join(os.homedir(), 'Downloads');
   const entries = await fsp.readdir(downloadsDir);
 
-  const candidates = entries
-    .map((filename) => ({ filename, parsed: parseFilename(filename) }))
-    .filter((entry): entry is { filename: string; parsed: NonNullable<ReturnType<typeof parseFilename>> } => entry.parsed !== null);
+  const candidates: { filename: string; parsed: ParsedFile }[] = [];
+  for (const filename of entries) {
+    if (args.pattern && !args.pattern.test(filename)) continue;
+    const whatsapp = parseWhatsAppFilename(filename);
+    if (whatsapp) {
+      candidates.push({ filename, parsed: whatsapp });
+      continue;
+    }
+    const generic = await parseGenericFile(path.join(downloadsDir, filename), filename);
+    if (generic) candidates.push({ filename, parsed: generic });
+  }
 
-  console.log(`Found ${candidates.length} WhatsApp-named file(s) in ~/Downloads.`);
+  console.log(`Found ${candidates.length} media file(s) in ~/Downloads.`);
 
   const existingItems = await readMediaItems();
   const knownFilenames = new Set(existingItems.map((item) => item.filename));
@@ -81,7 +140,8 @@ async function main() {
 
   if (args.dryRun) {
     for (const c of newCandidates) {
-      console.log(`  [dry-run] ${c.filename} — ${c.parsed.createdAt} — ${c.parsed.type}`);
+      const gps = c.parsed.latitude != null ? ` — gps: ${c.parsed.latitude},${c.parsed.longitude}` : ' — no gps';
+      console.log(`  [dry-run] ${c.filename} — ${c.parsed.createdAt} — ${c.parsed.type}${gps}`);
     }
     return;
   }
@@ -114,6 +174,8 @@ async function main() {
       description,
       type: c.parsed.type,
       location: args.location,
+      latitude: c.parsed.latitude,
+      longitude: c.parsed.longitude,
       createdAt: c.parsed.createdAt,
       key,
       filename: c.filename,
