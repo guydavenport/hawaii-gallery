@@ -122,6 +122,17 @@ function contentTypeFor(ext: string): string {
   }
 }
 
+const VIDEO_EXTENSIONS = new Set(['.mov', '.mp4', '.m4v']);
+
+// Live Photos export both a still image and a paired .mov motion clip
+// under the same uuid prefix - pick the one matching the expected type.
+function pickStagedFile(candidates: string[] | undefined, ismovie: boolean): string | undefined {
+  if (!candidates || candidates.length === 0) return undefined;
+  if (candidates.length === 1) return candidates[0];
+  const match = candidates.find((name) => VIDEO_EXTENSIONS.has(path.extname(name).toLowerCase()) === ismovie);
+  return match || candidates[0];
+}
+
 async function main() {
   loadEnvConfig(PROJECT_ROOT);
   const { s3Client, getBucket } = await import('../app/lib/s3');
@@ -188,11 +199,14 @@ async function main() {
   ]);
 
   const stagedFiles = await fsp.readdir(STAGING_DIR);
-  const stagedByUuid = new Map<string, string>();
+  const stagedByUuid = new Map<string, string[]>();
   for (const name of stagedFiles) {
     const dotIndex = name.indexOf('.');
     if (dotIndex === -1) continue;
-    stagedByUuid.set(name.slice(0, dotIndex), name);
+    const uuid = name.slice(0, dotIndex);
+    const list = stagedByUuid.get(uuid) || [];
+    list.push(name);
+    stagedByUuid.set(uuid, list);
   }
 
   const mediaItems: MediaItem[] = [];
@@ -200,7 +214,7 @@ async function main() {
   let maxCaptureDate = state.lastImportedCaptureDate || since;
 
   for (const record of newRecords) {
-    const stagedName = stagedByUuid.get(record.uuid);
+    const stagedName = pickStagedFile(stagedByUuid.get(record.uuid), record.ismovie);
 
     let fileBuffer: Buffer;
     try {
