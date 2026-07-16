@@ -104,6 +104,7 @@ async function main() {
   const { s3Client, getBucket } = await import('../app/lib/s3');
   const { generateDescription, saveMediaItems, readMediaItems } = await import('../app/lib/media');
   const { createAndUploadThumbnail, createAndUploadDisplayVersion } = await import('../app/lib/thumbnail');
+  const { reverseGeocode } = await import('../app/lib/geocode');
 
   const args = parseArgs();
   const uuids = (await fsp.readFile(args.uuidFile, 'utf8'))
@@ -179,7 +180,11 @@ async function main() {
     const type: MediaType = record.ismovie ? 'video' : 'photo';
     const captureDate = record.date_original || record.date;
     const createdAt = new Date(captureDate).toISOString();
-    const location = locationLabel(record.place);
+    let location = locationLabel(record.place);
+    if (location === 'Hawaii' && record.latitude != null && record.longitude != null) {
+      const geocoded = await reverseGeocode(record.latitude, record.longitude);
+      if (geocoded) location = geocoded;
+    }
     const filename = `${path.basename(record.original_filename, path.extname(record.original_filename))}${ext}`;
     const key = `uploads/${record.uuid}-${filename}`;
 

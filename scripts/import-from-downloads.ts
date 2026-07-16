@@ -112,6 +112,7 @@ async function main() {
   const { s3Client, getBucket } = await import('../app/lib/s3');
   const { generateDescription, saveMediaItems, readMediaItems } = await import('../app/lib/media');
   const { createAndUploadThumbnail, createAndUploadDisplayVersion } = await import('../app/lib/thumbnail');
+  const { reverseGeocode } = await import('../app/lib/geocode');
 
   const args = parseArgs();
   const downloadsDir = path.join(os.homedir(), 'Downloads');
@@ -168,15 +169,20 @@ async function main() {
     const thumbnailKey = await createAndUploadThumbnail(key, buffer, c.parsed.type);
     const displayKey = await createAndUploadDisplayVersion(key, buffer, c.parsed.type);
 
-    const title = args.location;
-    const description = await generateDescription(title, c.parsed.type, args.location);
+    let location = args.location;
+    if (location === 'Hawaii' && c.parsed.latitude != null && c.parsed.longitude != null) {
+      const geocoded = await reverseGeocode(c.parsed.latitude, c.parsed.longitude);
+      if (geocoded) location = geocoded;
+    }
+    const title = location;
+    const description = await generateDescription(title, c.parsed.type, location);
 
     mediaItems.push({
       id,
       title,
       description,
       type: c.parsed.type,
-      location: args.location,
+      location,
       latitude: c.parsed.latitude,
       longitude: c.parsed.longitude,
       createdAt: c.parsed.createdAt,
