@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import type { CSSProperties, FormEvent } from 'react';
 import Link from 'next/link';
+import { PAGE_BACKGROUND } from '@/app/lib/theme';
 
 interface SyncAddCandidate {
   key: string;
@@ -188,7 +189,7 @@ export default function AdminApp() {
 
   if (access === 'denied') {
     return (
-      <div style={{ minHeight: '100vh', background: '#07111f', color: 'white', padding: '2rem', display: 'grid', placeItems: 'center' }}>
+      <div style={{ minHeight: '100vh', background: PAGE_BACKGROUND, backgroundAttachment: 'fixed', color: 'white', padding: '2rem', display: 'grid', placeItems: 'center' }}>
         <div style={{ textAlign: 'center' }}>
           <p>Admin access required.</p>
           <Link href="/" style={{ color: '#7dd3fc' }}>Back to gallery</Link>
@@ -198,7 +199,7 @@ export default function AdminApp() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #07111f 0%, #14233d 100%)', color: 'white', padding: '2rem 1.25rem' }}>
+    <div style={{ minHeight: '100vh', background: PAGE_BACKGROUND, backgroundAttachment: 'fixed', color: 'white', padding: '2rem 1.25rem' }}>
       <div style={{ maxWidth: 900, margin: '0 auto', display: 'grid', gap: '1.5rem' }}>
         <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
           <div>

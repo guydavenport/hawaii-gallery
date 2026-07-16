@@ -6,6 +6,7 @@ import Link from 'next/link';
 import 'leaflet/dist/leaflet.css';
 import type { MediaItem } from '@/app/lib/types';
 import Lightbox from '@/app/components/Lightbox';
+import { PAGE_BACKGROUND } from '@/app/lib/theme';
 
 interface LocationGroup {
   location: string;
@@ -125,7 +126,7 @@ export default function MapApp() {
   }, []);
 
   return (
-    <div style={{ minHeight: '100vh', background: '#07111f', color: 'white' }}>
+    <div style={{ minHeight: '100vh', background: PAGE_BACKGROUND, backgroundAttachment: 'fixed', color: 'white' }}>
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.25rem 1.5rem', gap: '1rem', flexWrap: 'wrap' }}>
         <div>
           <p style={{ margin: 0, textTransform: 'uppercase', letterSpacing: '0.3em', color: '#7dd3fc' }}>Hawaii trip gallery</p>

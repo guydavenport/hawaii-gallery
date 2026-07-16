@@ -7,6 +7,7 @@ import JSZip from 'jszip';
 import type { MediaItem } from '@/app/lib/types';
 import Lightbox from '@/app/components/Lightbox';
 import { downloadFile } from '@/app/lib/download';
+import { PAGE_BACKGROUND } from '@/app/lib/theme';
 
 const HAWAII_TZ = 'Pacific/Honolulu';
 
@@ -220,7 +221,7 @@ export default function GalleryApp() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #07111f 0%, #14233d 100%)', color: 'white', padding: '2rem 1.25rem' }}>
+    <div style={{ minHeight: '100vh', background: PAGE_BACKGROUND, backgroundAttachment: 'fixed', color: 'white', padding: '2rem 1.25rem' }}>
       <div style={{ maxWidth: 1100, margin: '0 auto', display: 'grid', gap: '1.5rem' }}>
         <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
           <div>
