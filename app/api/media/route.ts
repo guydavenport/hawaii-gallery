@@ -11,6 +11,8 @@ import {
 } from '@/app/lib/media';
 import { requireSession, requireAdmin } from '@/app/lib/auth';
 import { ensureConfigLoaded } from '@/app/lib/runtime-config';
+import { getObjectBuffer } from '@/app/lib/s3';
+import { createAndUploadThumbnail } from '@/app/lib/thumbnail';
 
 interface RegisterRequestItem {
   key: string;
@@ -62,6 +64,14 @@ export async function POST(request: NextRequest) {
         const owner = raw.owner?.trim() || 'guest';
         const description = raw.description?.trim() || (await generateDescription(title, type, location));
 
+        let thumbnailKey: string | undefined;
+        try {
+          const buffer = await getObjectBuffer(raw.key);
+          thumbnailKey = await createAndUploadThumbnail(raw.key, buffer, type);
+        } catch (thumbError) {
+          console.error('Thumbnail generation failed for', raw.key, thumbError);
+        }
+
         const item: MediaItem = {
           id: crypto.randomUUID(),
           title,
@@ -74,6 +84,7 @@ export async function POST(request: NextRequest) {
           key: raw.key,
           filename: raw.filename,
           owner,
+          thumbnailKey,
         };
         return item;
       })

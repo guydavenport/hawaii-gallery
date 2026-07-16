@@ -8,6 +8,7 @@ export interface MediaItem {
   longitude?: number;
   createdAt: string;
   url: string;
+  thumbnailUrl: string;
   key: string;
   filename: string;
   owner: string;

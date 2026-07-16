@@ -88,7 +88,7 @@ export default function MapApp() {
           .slice(0, 6)
           .map(
             (item, i) =>
-              `<img data-idx="${i}" src="${item.url}" style="width:56px;height:56px;object-fit:cover;border-radius:6px;cursor:pointer;margin:2px" />`
+              `<img data-idx="${i}" src="${item.thumbnailUrl}" style="width:56px;height:56px;object-fit:cover;border-radius:6px;cursor:pointer;margin:2px" />`
           )
           .join('');
 

@@ -25,10 +25,12 @@ export interface MediaItem {
   owner: string;
   sourceUuid?: string;
   hidden?: boolean;
+  thumbnailKey?: string;
 }
 
 export interface MediaItemWithUrl extends MediaItem {
   url: string;
+  thumbnailUrl: string;
 }
 
 function requireEnv(name: string) {
@@ -150,10 +152,11 @@ export function visibleToRole(items: MediaItem[], role: 'admin' | 'guest'): Medi
 
 export async function withViewUrls(items: MediaItem[]): Promise<MediaItemWithUrl[]> {
   return Promise.all(
-    items.map(async (item) => ({
-      ...item,
-      url: await createViewUrl(item.key),
-    }))
+    items.map(async (item) => {
+      const url = await createViewUrl(item.key);
+      const thumbnailUrl = item.thumbnailKey ? await createViewUrl(item.thumbnailKey) : url;
+      return { ...item, url, thumbnailUrl };
+    })
   );
 }
 

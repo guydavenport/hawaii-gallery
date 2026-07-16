@@ -384,9 +384,9 @@ export default function GalleryApp() {
                           onClick={() => (selectMode ? toggleSelected(item.id) : setLightboxIndex(globalIndex))}
                         >
                           {item.type === 'video' ? (
-                            <video muted src={item.url} style={{ width: '100%', height: 180, objectFit: 'cover', background: '#020617' }} />
+                            <video muted src={item.thumbnailUrl} style={{ width: '100%', height: 180, objectFit: 'cover', background: '#020617' }} />
                           ) : (
-                            <img src={item.url} alt={item.title} style={{ width: '100%', height: 180, objectFit: 'cover' }} />
+                            <img src={item.thumbnailUrl} alt={item.title} style={{ width: '100%', height: 180, objectFit: 'cover' }} />
                           )}
                         </div>
                         <div style={{ padding: '0.9rem' }}>

@@ -46,6 +46,19 @@ export async function createViewUrl(key: string) {
   return getSignedUrl(s3Client, command, { expiresIn: GET_URL_EXPIRY_SECONDS });
 }
 
+export async function putObject(key: string, body: Buffer, contentType: string) {
+  await s3Client.send(new PutObjectCommand({ Bucket: getBucket(), Key: key, Body: body, ContentType: contentType }));
+}
+
+export async function getObjectBuffer(key: string): Promise<Buffer> {
+  const response = await s3Client.send(new GetObjectCommand({ Bucket: getBucket(), Key: key }));
+  const chunks: Uint8Array[] = [];
+  for await (const chunk of response.Body as AsyncIterable<Uint8Array>) {
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
+}
+
 export interface S3ObjectSummary {
   key: string;
   size: number;
