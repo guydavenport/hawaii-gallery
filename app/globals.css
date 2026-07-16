@@ -19,6 +19,10 @@ a {
   color: inherit;
 }
 
+.photo-grid {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
 @media (max-width: 640px) {
   .gallery-header {
     flex-direction: column !important;
@@ -36,5 +40,9 @@ a {
   .gallery-header-nav button {
     text-align: center;
     justify-content: center;
+  }
+
+  .photo-grid {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)) !important;
   }
 }

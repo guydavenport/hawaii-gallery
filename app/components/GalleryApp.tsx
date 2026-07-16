@@ -43,6 +43,7 @@ export default function GalleryApp() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [downloading, setDownloading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [photographerFilter, setPhotographerFilter] = useState<string | null>(null);
 
   async function loadItems() {
     const res = await fetch('/api/media');
@@ -184,18 +185,28 @@ export default function GalleryApp() {
     [items]
   );
 
+  const photographers = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of sortedItems) {
+      counts.set(item.owner, (counts.get(item.owner) || 0) + 1);
+    }
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+  }, [sortedItems]);
+
   const filteredItems = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return sortedItems;
-    return sortedItems.filter(
-      (item) =>
+    return sortedItems.filter((item) => {
+      if (photographerFilter && item.owner !== photographerFilter) return false;
+      if (!q) return true;
+      return (
         item.title.toLowerCase().includes(q) ||
         item.description.toLowerCase().includes(q) ||
         item.location.toLowerCase().includes(q) ||
         item.owner.toLowerCase().includes(q) ||
         dayLabel(item.createdAt).toLowerCase().includes(q)
-    );
-  }, [sortedItems, searchQuery]);
+      );
+    });
+  }, [sortedItems, searchQuery, photographerFilter]);
 
   const dayGroups = useMemo(() => {
     const groups: { key: string; label: string; items: MediaItem[] }[] = [];
@@ -267,6 +278,28 @@ export default function GalleryApp() {
           />
         ) : null}
 
+        {isLoggedIn && photographers.length > 1 ? (
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              style={photographerFilter === null ? chipStyleActive : chipStyle}
+              onClick={() => setPhotographerFilter(null)}
+            >
+              All
+            </button>
+            {photographers.map(([owner, count]) => (
+              <button
+                key={owner}
+                type="button"
+                style={photographerFilter === owner ? chipStyleActive : chipStyle}
+                onClick={() => setPhotographerFilter(owner === photographerFilter ? null : owner)}
+              >
+                {owner} ({count})
+              </button>
+            ))}
+          </div>
+        ) : null}
+
         {status ? <p style={{ color: '#fca5a5', margin: 0 }}>{status}</p> : null}
 
         {!isLoggedIn ? (
@@ -304,7 +337,7 @@ export default function GalleryApp() {
                     </button>
                   ) : null}
                 </div>
-                <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>
+                <div className="photo-grid" style={{ display: 'grid', gap: '1rem' }}>
                   {group.items.map((item) => {
                     const globalIndex = filteredItems.indexOf(item);
                     return (
@@ -385,7 +418,10 @@ export default function GalleryApp() {
             ))}
             {sortedItems.length === 0 ? <p style={{ color: '#94a3b8' }}>No photos yet.</p> : null}
             {sortedItems.length > 0 && filteredItems.length === 0 ? (
-              <p style={{ color: '#94a3b8' }}>No photos match &quot;{searchQuery}&quot;.</p>
+              <p style={{ color: '#94a3b8' }}>
+                No photos match{searchQuery ? ` "${searchQuery}"` : ''}
+                {photographerFilter ? ` by ${photographerFilter}` : ''}.
+              </p>
             ) : null}
           </div>
         )}
@@ -461,6 +497,24 @@ const smallButtonStyle: CSSProperties = {
   color: '#cbd5e1',
   cursor: 'pointer',
   fontSize: '0.85rem',
+};
+
+const chipStyle: CSSProperties = {
+  padding: '0.4rem 0.85rem',
+  borderRadius: 999,
+  border: '1px solid #334155',
+  background: 'rgba(15, 23, 42, 0.9)',
+  color: '#cbd5e1',
+  cursor: 'pointer',
+  fontSize: '0.85rem',
+};
+
+const chipStyleActive: CSSProperties = {
+  ...chipStyle,
+  background: '#38bdf8',
+  borderColor: '#38bdf8',
+  color: '#07111f',
+  fontWeight: 700,
 };
 
 const linkStyle: CSSProperties = {
