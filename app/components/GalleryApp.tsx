@@ -44,6 +44,9 @@ export default function GalleryApp() {
   const [downloading, setDownloading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [photographerFilter, setPhotographerFilter] = useState<string | null>(null);
+  const [previewAsGuest, setPreviewAsGuest] = useState(false);
+
+  const effectiveRole = previewAsGuest ? 'guest' : role;
 
   async function loadItems() {
     const res = await fetch('/api/media');
@@ -102,6 +105,7 @@ export default function GalleryApp() {
     await fetch('/api/auth', { method: 'DELETE' });
     setIsLoggedIn(false);
     setRole(null);
+    setPreviewAsGuest(false);
     setItems([]);
     setStatus('Signed out.');
   }
@@ -185,17 +189,22 @@ export default function GalleryApp() {
     [items]
   );
 
+  const roleVisibleItems = useMemo(
+    () => (effectiveRole === 'admin' ? sortedItems : sortedItems.filter((item) => !item.hidden)),
+    [sortedItems, effectiveRole]
+  );
+
   const photographers = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const item of sortedItems) {
+    for (const item of roleVisibleItems) {
       counts.set(item.owner, (counts.get(item.owner) || 0) + 1);
     }
     return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
-  }, [sortedItems]);
+  }, [roleVisibleItems]);
 
   const filteredItems = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return sortedItems.filter((item) => {
+    return roleVisibleItems.filter((item) => {
       if (photographerFilter && item.owner !== photographerFilter) return false;
       if (!q) return true;
       return (
@@ -206,7 +215,7 @@ export default function GalleryApp() {
         dayLabel(item.createdAt).toLowerCase().includes(q)
       );
     });
-  }, [sortedItems, searchQuery, photographerFilter]);
+  }, [roleVisibleItems, searchQuery, photographerFilter]);
 
   const dayGroups = useMemo(() => {
     const groups: { key: string; label: string; items: MediaItem[] }[] = [];
@@ -260,7 +269,16 @@ export default function GalleryApp() {
                   </button>
                 ) : null}
                 <Link href="/map" style={linkStyle}>Map</Link>
-                {role === 'admin' ? <Link href="/admin" style={linkStyle}>Admin</Link> : null}
+                {role === 'admin' ? (
+                  <button
+                    type="button"
+                    style={previewAsGuest ? chipStyleActive : smallButtonStyle}
+                    onClick={() => setPreviewAsGuest((prev) => !prev)}
+                  >
+                    {previewAsGuest ? 'Exit guest preview' : 'Preview as guest'}
+                  </button>
+                ) : null}
+                {effectiveRole === 'admin' ? <Link href="/admin" style={linkStyle}>Admin</Link> : null}
                 <button type="button" style={{ ...buttonStyle, background: '#334155', color: 'white' }} onClick={handleLogout}>
                   Sign out
                 </button>
@@ -268,6 +286,17 @@ export default function GalleryApp() {
             ) : null}
           </div>
         </header>
+
+        {previewAsGuest ? (
+          <div style={{ background: 'rgba(56, 189, 248, 0.15)', border: '1px solid #38bdf8', borderRadius: 12, padding: '0.75rem 1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+            <p style={{ margin: 0, color: '#7dd3fc', fontSize: '0.9rem' }}>
+              👀 Previewing as a guest would see it — hidden items and admin controls are off.
+            </p>
+            <button type="button" style={chipStyleActive} onClick={() => setPreviewAsGuest(false)}>
+              Exit preview
+            </button>
+          </div>
+        ) : null}
 
         {isLoggedIn && sortedItems.length > 0 ? (
           <input
@@ -399,7 +428,7 @@ export default function GalleryApp() {
                               <button type="button" style={smallButtonStyle} onClick={() => downloadFile(item.url, item.filename)}>
                                 Download
                               </button>
-                              {role === 'admin' ? (
+                              {effectiveRole === 'admin' ? (
                                 <>
                                   <button type="button" style={smallButtonStyle} onClick={() => startEdit(item)}>Edit</button>
                                   <button type="button" style={smallButtonStyle} onClick={() => toggleHidden(item)}>
@@ -460,7 +489,7 @@ export default function GalleryApp() {
         <Lightbox
           items={filteredItems}
           index={lightboxIndex}
-          role={role}
+          role={effectiveRole}
           onClose={() => setLightboxIndex(null)}
           onNavigate={setLightboxIndex}
           onUpdate={updateItem}
