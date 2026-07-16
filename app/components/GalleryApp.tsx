@@ -223,12 +223,12 @@ export default function GalleryApp() {
   return (
     <div style={{ minHeight: '100vh', background: PAGE_BACKGROUND, backgroundAttachment: 'fixed', color: 'white', padding: '2rem 1.25rem' }}>
       <div style={{ maxWidth: 1100, margin: '0 auto', display: 'grid', gap: '1.5rem' }}>
-        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+        <header className="gallery-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
           <div>
             <p style={{ margin: 0, textTransform: 'uppercase', letterSpacing: '0.3em', color: '#7dd3fc' }}>Hawaii trip gallery</p>
-            <h1 style={{ margin: '0.35rem 0 0', fontSize: '2rem' }}>Private gallery for photos and videos</h1>
+            <h1 style={{ margin: '0.35rem 0 0', fontSize: 'clamp(1.4rem, 5vw, 2rem)' }}>Private gallery for photos and videos</h1>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+          <div className="gallery-header-nav" style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
             {isLoggedIn ? (
               <>
                 {dayGroups.length > 0 ? (
@@ -304,7 +304,7 @@ export default function GalleryApp() {
                     </button>
                   ) : null}
                 </div>
-                <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
+                <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>
                   {group.items.map((item) => {
                     const globalIndex = filteredItems.indexOf(item);
                     return (

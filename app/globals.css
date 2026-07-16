@@ -18,3 +18,23 @@ body {
 a {
   color: inherit;
 }
+
+@media (max-width: 640px) {
+  .gallery-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+  }
+
+  .gallery-header-nav {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    width: 100%;
+    gap: 0.5rem !important;
+  }
+
+  .gallery-header-nav a,
+  .gallery-header-nav button {
+    text-align: center;
+    justify-content: center;
+  }
+}
