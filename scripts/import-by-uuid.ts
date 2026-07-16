@@ -72,10 +72,6 @@ function capitalize(text: string) {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-function extensionFor(record: PhotoRecord): string {
-  return record.ismovie ? path.extname(record.original_filename).toLowerCase() || '.mov' : '.jpeg';
-}
-
 function contentTypeFor(ext: string): string {
   switch (ext) {
     case '.jpg':
@@ -140,22 +136,31 @@ async function main() {
     '--update',
   ]);
 
+  const stagedFiles = await fsp.readdir(STAGING_DIR);
+  const stagedByUuid = new Map<string, string>();
+  for (const name of stagedFiles) {
+    const dotIndex = name.indexOf('.');
+    if (dotIndex === -1) continue;
+    stagedByUuid.set(name.slice(0, dotIndex), name);
+  }
+
   const mediaItems: MediaItem[] = [];
   const stillMissingUuids: string[] = [];
 
   for (const record of newRecords) {
-    const ext = extensionFor(record);
-    const stagedPath = path.join(STAGING_DIR, `${record.uuid}${ext}`);
+    const stagedName = stagedByUuid.get(record.uuid);
 
     let fileBuffer: Buffer;
     try {
-      fileBuffer = await fsp.readFile(stagedPath);
+      if (!stagedName) throw new Error('not found');
+      fileBuffer = await fsp.readFile(path.join(STAGING_DIR, stagedName));
     } catch {
-      console.warn(`  Skipping ${record.original_filename}: export file not found at ${stagedPath}`);
+      console.warn(`  Skipping ${record.original_filename}: export file not found in staging directory`);
       stillMissingUuids.push(record.uuid);
       continue;
     }
 
+    const ext = path.extname(stagedName).toLowerCase();
     const type: MediaType = record.ismovie ? 'video' : 'photo';
     const captureDate = record.date_original || record.date;
     const createdAt = new Date(captureDate).toISOString();
