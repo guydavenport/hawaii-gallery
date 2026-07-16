@@ -111,7 +111,7 @@ async function main() {
   loadEnvConfig(PROJECT_ROOT);
   const { s3Client, getBucket } = await import('../app/lib/s3');
   const { generateDescription, saveMediaItems, readMediaItems } = await import('../app/lib/media');
-  const { createAndUploadThumbnail } = await import('../app/lib/thumbnail');
+  const { createAndUploadThumbnail, createAndUploadDisplayVersion } = await import('../app/lib/thumbnail');
 
   const args = parseArgs();
   const downloadsDir = path.join(os.homedir(), 'Downloads');
@@ -166,6 +166,7 @@ async function main() {
       })
     );
     const thumbnailKey = await createAndUploadThumbnail(key, buffer, c.parsed.type);
+    const displayKey = await createAndUploadDisplayVersion(key, buffer, c.parsed.type);
 
     const title = args.location;
     const description = await generateDescription(title, c.parsed.type, args.location);
@@ -183,6 +184,7 @@ async function main() {
       filename: c.filename,
       owner: args.owner,
       thumbnailKey,
+      displayKey,
     });
   }
 

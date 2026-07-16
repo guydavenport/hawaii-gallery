@@ -12,7 +12,7 @@ import {
 import { requireSession, requireAdmin } from '@/app/lib/auth';
 import { ensureConfigLoaded } from '@/app/lib/runtime-config';
 import { getObjectBuffer } from '@/app/lib/s3';
-import { createAndUploadThumbnail } from '@/app/lib/thumbnail';
+import { createAndUploadThumbnail, createAndUploadDisplayVersion } from '@/app/lib/thumbnail';
 
 interface RegisterRequestItem {
   key: string;
@@ -65,9 +65,11 @@ export async function POST(request: NextRequest) {
         const description = raw.description?.trim() || (await generateDescription(title, type, location));
 
         let thumbnailKey: string | undefined;
+        let displayKey: string | undefined;
         try {
           const buffer = await getObjectBuffer(raw.key);
           thumbnailKey = await createAndUploadThumbnail(raw.key, buffer, type);
+          displayKey = await createAndUploadDisplayVersion(raw.key, buffer, type);
         } catch (thumbError) {
           console.error('Thumbnail generation failed for', raw.key, thumbError);
         }
@@ -85,6 +87,7 @@ export async function POST(request: NextRequest) {
           filename: raw.filename,
           owner,
           thumbnailKey,
+          displayKey,
         };
         return item;
       })

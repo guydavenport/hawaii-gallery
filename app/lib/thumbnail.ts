@@ -10,26 +10,26 @@ const execFileAsync = promisify(execFile);
 
 const THUMBNAIL_WIDTH = 480;
 const THUMBNAIL_QUALITY = 70;
+const DISPLAY_QUALITY = 88;
+
+const HEIC_EXTENSIONS = new Set(['.heic', '.heif']);
 
 // sharp's bundled libvips can't decode HEIC (patent-encumbered HEVC codec is
 // excluded from the prebuilt binaries). Fall back to macOS's built-in `sips`,
 // which handles HEIC fine — only available when running locally on a Mac
 // (the CLI import scripts), never in the Lambda/Linux production runtime, so
 // this is a no-op there and callers should keep treating `null` as normal.
-async function generateThumbnailViaSips(input: Buffer): Promise<Buffer | null> {
+async function convertViaSips(input: Buffer, quality: number, width?: number): Promise<Buffer | null> {
   let tmpDir: string | undefined;
   try {
     tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'thumb-'));
     const srcPath = path.join(tmpDir, 'src');
     const outPath = path.join(tmpDir, 'out.jpg');
     await fsp.writeFile(srcPath, input);
-    await execFileAsync('sips', [
-      '-s', 'format', 'jpeg',
-      '-s', 'formatOptions', String(THUMBNAIL_QUALITY),
-      '--resampleWidth', String(THUMBNAIL_WIDTH),
-      srcPath,
-      '--out', outPath,
-    ]);
+    const args = ['-s', 'format', 'jpeg', '-s', 'formatOptions', String(quality)];
+    if (width) args.push('--resampleWidth', String(width));
+    args.push(srcPath, '--out', outPath);
+    await execFileAsync('sips', args);
     return await fsp.readFile(outPath);
   } catch {
     return null;
@@ -38,16 +38,24 @@ async function generateThumbnailViaSips(input: Buffer): Promise<Buffer | null> {
   }
 }
 
-export async function generateThumbnailBuffer(input: Buffer): Promise<Buffer | null> {
+async function convertToJpeg(input: Buffer, quality: number, width?: number): Promise<Buffer | null> {
   try {
-    return await sharp(input)
-      .rotate()
-      .resize({ width: THUMBNAIL_WIDTH, withoutEnlargement: true })
-      .jpeg({ quality: THUMBNAIL_QUALITY })
-      .toBuffer();
+    let pipeline = sharp(input).rotate();
+    if (width) pipeline = pipeline.resize({ width, withoutEnlargement: true });
+    return await pipeline.jpeg({ quality }).toBuffer();
   } catch {
-    return generateThumbnailViaSips(input);
+    return convertViaSips(input, quality, width);
   }
+}
+
+export async function generateThumbnailBuffer(input: Buffer): Promise<Buffer | null> {
+  return convertToJpeg(input, THUMBNAIL_QUALITY, THUMBNAIL_WIDTH);
+}
+
+// Full-resolution JPEG, used only as a browser-viewable stand-in for source
+// formats (HEIC/HEIF) that most browsers can't decode in an <img> tag.
+export async function generateDisplayBuffer(input: Buffer): Promise<Buffer | null> {
+  return convertToJpeg(input, DISPLAY_QUALITY);
 }
 
 // Lives under a separate top-level prefix (not /uploads/) so it's never
@@ -55,6 +63,11 @@ export async function generateThumbnailBuffer(input: Buffer): Promise<Buffer | n
 export function thumbnailKeyFor(key: string): string {
   const name = key.slice(key.lastIndexOf('/') + 1);
   return `thumbnails/${name.replace(/\.[^.]+$/, '')}.jpg`;
+}
+
+export function displayKeyFor(key: string): string {
+  const name = key.slice(key.lastIndexOf('/') + 1);
+  return `display/${name.replace(/\.[^.]+$/, '')}.jpg`;
 }
 
 /** Generates a thumbnail from a photo buffer and uploads it; returns the key, or undefined if it's a video or generation failed. */
@@ -69,4 +82,24 @@ export async function createAndUploadThumbnail(
   const thumbKey = thumbnailKeyFor(key);
   await putObject(thumbKey, thumbBuffer, 'image/jpeg');
   return thumbKey;
+}
+
+/**
+ * For photo sources most browsers can't render inline (HEIC/HEIF), generates
+ * a full-resolution JPEG stand-in for lightbox display. Returns undefined for
+ * already-web-safe formats (JPEG/PNG/etc.) — those use the original directly.
+ */
+export async function createAndUploadDisplayVersion(
+  key: string,
+  buffer: Buffer,
+  type: 'photo' | 'video'
+): Promise<string | undefined> {
+  if (type !== 'photo') return undefined;
+  const ext = key.slice(key.lastIndexOf('.')).toLowerCase();
+  if (!HEIC_EXTENSIONS.has(ext)) return undefined;
+  const displayBuffer = await generateDisplayBuffer(buffer);
+  if (!displayBuffer) return undefined;
+  const displayKey = displayKeyFor(key);
+  await putObject(displayKey, displayBuffer, 'image/jpeg');
+  return displayKey;
 }

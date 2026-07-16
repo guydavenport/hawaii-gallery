@@ -26,11 +26,13 @@ export interface MediaItem {
   sourceUuid?: string;
   hidden?: boolean;
   thumbnailKey?: string;
+  displayKey?: string;
 }
 
 export interface MediaItemWithUrl extends MediaItem {
   url: string;
   thumbnailUrl: string;
+  displayUrl: string;
 }
 
 function requireEnv(name: string) {
@@ -155,7 +157,8 @@ export async function withViewUrls(items: MediaItem[]): Promise<MediaItemWithUrl
     items.map(async (item) => {
       const url = await createViewUrl(item.key);
       const thumbnailUrl = item.thumbnailKey ? await createViewUrl(item.thumbnailKey) : url;
-      return { ...item, url, thumbnailUrl };
+      const displayUrl = item.displayKey ? await createViewUrl(item.displayKey) : url;
+      return { ...item, url, thumbnailUrl, displayUrl };
     })
   );
 }

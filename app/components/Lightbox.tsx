@@ -76,7 +76,7 @@ export default function Lightbox({ items, index, role, onClose, onNavigate, onUp
         {item.type === 'video' ? (
           <video controls autoPlay src={item.url} style={mediaStyle} />
         ) : (
-          <img src={item.url} alt={item.title} style={mediaStyle} />
+          <img src={item.displayUrl} alt={item.title} style={mediaStyle} />
         )}
         <div style={captionStyle}>
           {isEditing ? (

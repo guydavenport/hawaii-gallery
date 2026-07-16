@@ -9,6 +9,7 @@ export interface MediaItem {
   createdAt: string;
   url: string;
   thumbnailUrl: string;
+  displayUrl: string;
   key: string;
   filename: string;
   owner: string;

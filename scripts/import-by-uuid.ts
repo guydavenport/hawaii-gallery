@@ -103,7 +103,7 @@ async function main() {
   loadEnvConfig(PROJECT_ROOT);
   const { s3Client, getBucket } = await import('../app/lib/s3');
   const { generateDescription, saveMediaItems, readMediaItems } = await import('../app/lib/media');
-  const { createAndUploadThumbnail } = await import('../app/lib/thumbnail');
+  const { createAndUploadThumbnail, createAndUploadDisplayVersion } = await import('../app/lib/thumbnail');
 
   const args = parseArgs();
   const uuids = (await fsp.readFile(args.uuidFile, 'utf8'))
@@ -193,6 +193,7 @@ async function main() {
       })
     );
     const thumbnailKey = await createAndUploadThumbnail(key, fileBuffer, type);
+    const displayKey = await createAndUploadDisplayVersion(key, fileBuffer, type);
 
     const title = location;
     const description = record.ai_caption ? capitalize(record.ai_caption) : await generateDescription(title, type, location);
@@ -210,6 +211,7 @@ async function main() {
       filename,
       owner: args.owner,
       thumbnailKey,
+      displayKey,
       sourceUuid: record.uuid,
     });
   }

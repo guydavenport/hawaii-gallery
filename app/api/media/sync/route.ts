@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { listUploadedObjects, getObjectBuffer } from '@/app/lib/s3';
-import { createAndUploadThumbnail } from '@/app/lib/thumbnail';
+import { createAndUploadThumbnail, createAndUploadDisplayVersion } from '@/app/lib/thumbnail';
 import {
   deleteMediaItems,
   generateDescription,
@@ -76,9 +76,11 @@ export async function POST(request: NextRequest) {
       const description = await generateDescription(title, type, location);
 
       let thumbnailKey: string | undefined;
+      let displayKey: string | undefined;
       try {
         const buffer = await getObjectBuffer(raw.key);
         thumbnailKey = await createAndUploadThumbnail(raw.key, buffer, type);
+        displayKey = await createAndUploadDisplayVersion(raw.key, buffer, type);
       } catch (thumbError) {
         console.error('Thumbnail generation failed for', raw.key, thumbError);
       }
@@ -94,6 +96,7 @@ export async function POST(request: NextRequest) {
         filename: raw.filename,
         owner,
         thumbnailKey,
+        displayKey,
       };
     })
   );
