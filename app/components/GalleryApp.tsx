@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties, FormEvent } from 'react';
 import Link from 'next/link';
 import JSZip from 'jszip';
-import type { MediaItem } from '@/app/lib/types';
+import type { MediaItem, DescriptionSource } from '@/app/lib/types';
 import Lightbox from '@/app/components/Lightbox';
 import { downloadFile } from '@/app/lib/download';
 import { PAGE_BACKGROUND } from '@/app/lib/theme';
@@ -13,6 +13,19 @@ const HAWAII_TZ = 'Pacific/Honolulu';
 
 function dayKey(createdAt: string) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: HAWAII_TZ }).format(new Date(createdAt));
+}
+
+function descriptionSourceLabel(source: DescriptionSource): string {
+  switch (source) {
+    case 'vision':
+      return 'AI-described';
+    case 'personal':
+      return 'Personal caption';
+    case 'manual':
+      return 'Manually edited';
+    case 'fallback':
+      return 'Generic';
+  }
 }
 
 function dayLabel(createdAt: string) {
@@ -47,6 +60,8 @@ export default function GalleryApp() {
   const [searchQuery, setSearchQuery] = useState('');
   const [photographerFilter, setPhotographerFilter] = useState<string | null>(null);
   const [peopleFilter, setPeopleFilter] = useState<string | null>(null);
+  const [typeFilter, setTypeFilter] = useState<'photo' | 'video' | null>(null);
+  const [descriptionSourceFilter, setDescriptionSourceFilter] = useState<DescriptionSource | null>(null);
   const [previewAsGuest, setPreviewAsGuest] = useState(false);
 
   const effectiveRole = previewAsGuest ? 'guest' : role;
@@ -215,11 +230,28 @@ export default function GalleryApp() {
     return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
   }, [roleVisibleItems]);
 
+  const typeCounts = useMemo(() => {
+    const counts = { photo: 0, video: 0 };
+    for (const item of roleVisibleItems) counts[item.type]++;
+    return counts;
+  }, [roleVisibleItems]);
+
+  const descriptionSourceCounts = useMemo(() => {
+    const counts = new Map<DescriptionSource, number>();
+    for (const item of roleVisibleItems) {
+      const source = item.descriptionSource || 'fallback';
+      counts.set(source, (counts.get(source) || 0) + 1);
+    }
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+  }, [roleVisibleItems]);
+
   const filteredItems = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return roleVisibleItems.filter((item) => {
       if (photographerFilter && item.owner !== photographerFilter) return false;
       if (peopleFilter && !item.people?.includes(peopleFilter)) return false;
+      if (typeFilter && item.type !== typeFilter) return false;
+      if (descriptionSourceFilter && (item.descriptionSource || 'fallback') !== descriptionSourceFilter) return false;
       if (!q) return true;
       return (
         item.title.toLowerCase().includes(q) ||
@@ -230,7 +262,7 @@ export default function GalleryApp() {
         dayLabel(item.createdAt).toLowerCase().includes(q)
       );
     });
-  }, [roleVisibleItems, searchQuery, photographerFilter, peopleFilter]);
+  }, [roleVisibleItems, searchQuery, photographerFilter, peopleFilter, typeFilter, descriptionSourceFilter]);
 
   const dayGroups = useMemo(() => {
     const groups: { key: string; label: string; items: MediaItem[] }[] = [];
@@ -252,12 +284,18 @@ export default function GalleryApp() {
   }
 
   const activeFilterCount =
-    (searchQuery.trim() ? 1 : 0) + (photographerFilter ? 1 : 0) + (peopleFilter ? 1 : 0);
+    (searchQuery.trim() ? 1 : 0) +
+    (photographerFilter ? 1 : 0) +
+    (peopleFilter ? 1 : 0) +
+    (typeFilter ? 1 : 0) +
+    (descriptionSourceFilter ? 1 : 0);
 
   function clearAllFilters() {
     setSearchQuery('');
     setPhotographerFilter(null);
     setPeopleFilter(null);
+    setTypeFilter(null);
+    setDescriptionSourceFilter(null);
   }
 
   if (checkingSession) {
@@ -498,7 +536,9 @@ export default function GalleryApp() {
               <p style={{ color: '#94a3b8' }}>
                 No photos match{searchQuery ? ` "${searchQuery}"` : ''}
                 {photographerFilter ? ` by ${photographerFilter}` : ''}
-                {peopleFilter ? ` featuring ${peopleFilter}` : ''}.
+                {peopleFilter ? ` featuring ${peopleFilter}` : ''}
+                {typeFilter ? ` (${typeFilter}s only)` : ''}
+                {descriptionSourceFilter ? ` with a ${descriptionSourceFilter} description` : ''}.
               </p>
             ) : null}
           </div>
@@ -595,6 +635,60 @@ export default function GalleryApp() {
                     onClick={() => setPeopleFilter(name === peopleFilter ? null : name)}
                   >
                     {name} ({count})
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {typeCounts.photo > 0 && typeCounts.video > 0 ? (
+            <div>
+              <p style={{ margin: '0 0 0.5rem', color: '#94a3b8', fontSize: '0.85rem' }}>Type</p>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  style={typeFilter === null ? chipStyleActive : chipStyle}
+                  onClick={() => setTypeFilter(null)}
+                >
+                  All
+                </button>
+                <button
+                  type="button"
+                  style={typeFilter === 'photo' ? chipStyleActive : chipStyle}
+                  onClick={() => setTypeFilter(typeFilter === 'photo' ? null : 'photo')}
+                >
+                  Photos ({typeCounts.photo})
+                </button>
+                <button
+                  type="button"
+                  style={typeFilter === 'video' ? chipStyleActive : chipStyle}
+                  onClick={() => setTypeFilter(typeFilter === 'video' ? null : 'video')}
+                >
+                  Videos ({typeCounts.video})
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {descriptionSourceCounts.length > 1 ? (
+            <div>
+              <p style={{ margin: '0 0 0.5rem', color: '#94a3b8', fontSize: '0.85rem' }}>Description</p>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  style={descriptionSourceFilter === null ? chipStyleActive : chipStyle}
+                  onClick={() => setDescriptionSourceFilter(null)}
+                >
+                  All
+                </button>
+                {descriptionSourceCounts.map(([source, count]) => (
+                  <button
+                    key={source}
+                    type="button"
+                    style={descriptionSourceFilter === source ? chipStyleActive : chipStyle}
+                    onClick={() => setDescriptionSourceFilter(source === descriptionSourceFilter ? null : source)}
+                  >
+                    {descriptionSourceLabel(source)} ({count})
                   </button>
                 ))}
               </div>
