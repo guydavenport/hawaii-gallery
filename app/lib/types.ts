@@ -14,4 +14,5 @@ export interface MediaItem {
   filename: string;
   owner: string;
   hidden?: boolean;
+  people?: string[];
 }

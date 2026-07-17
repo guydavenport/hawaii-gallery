@@ -44,6 +44,7 @@ export default function GalleryApp() {
   const [downloading, setDownloading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [photographerFilter, setPhotographerFilter] = useState<string | null>(null);
+  const [peopleFilter, setPeopleFilter] = useState<string | null>(null);
   const [previewAsGuest, setPreviewAsGuest] = useState(false);
 
   const effectiveRole = previewAsGuest ? 'guest' : role;
@@ -202,20 +203,32 @@ export default function GalleryApp() {
     return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
   }, [roleVisibleItems]);
 
+  const people = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of roleVisibleItems) {
+      for (const name of item.people || []) {
+        counts.set(name, (counts.get(name) || 0) + 1);
+      }
+    }
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+  }, [roleVisibleItems]);
+
   const filteredItems = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return roleVisibleItems.filter((item) => {
       if (photographerFilter && item.owner !== photographerFilter) return false;
+      if (peopleFilter && !item.people?.includes(peopleFilter)) return false;
       if (!q) return true;
       return (
         item.title.toLowerCase().includes(q) ||
         item.description.toLowerCase().includes(q) ||
         item.location.toLowerCase().includes(q) ||
         item.owner.toLowerCase().includes(q) ||
+        (item.people || []).some((name) => name.toLowerCase().includes(q)) ||
         dayLabel(item.createdAt).toLowerCase().includes(q)
       );
     });
-  }, [roleVisibleItems, searchQuery, photographerFilter]);
+  }, [roleVisibleItems, searchQuery, photographerFilter, peopleFilter]);
 
   const dayGroups = useMemo(() => {
     const groups: { key: string; label: string; items: MediaItem[] }[] = [];
@@ -302,7 +315,7 @@ export default function GalleryApp() {
           <input
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder="Search by title, description, location, photographer, or date..."
+            placeholder="Search by title, description, location, photographer, people, or date..."
             style={inputStyle}
           />
         ) : null}
@@ -324,6 +337,29 @@ export default function GalleryApp() {
                 onClick={() => setPhotographerFilter(owner === photographerFilter ? null : owner)}
               >
                 {owner} ({count})
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        {isLoggedIn && people.length > 0 ? (
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <span style={{ color: '#94a3b8', fontSize: '0.85rem', alignSelf: 'center', marginRight: '0.25rem' }}>People:</span>
+            <button
+              type="button"
+              style={peopleFilter === null ? chipStyleActive : chipStyle}
+              onClick={() => setPeopleFilter(null)}
+            >
+              All
+            </button>
+            {people.map(([name, count]) => (
+              <button
+                key={name}
+                type="button"
+                style={peopleFilter === name ? chipStyleActive : chipStyle}
+                onClick={() => setPeopleFilter(name === peopleFilter ? null : name)}
+              >
+                {name} ({count})
               </button>
             ))}
           </div>
@@ -449,7 +485,8 @@ export default function GalleryApp() {
             {sortedItems.length > 0 && filteredItems.length === 0 ? (
               <p style={{ color: '#94a3b8' }}>
                 No photos match{searchQuery ? ` "${searchQuery}"` : ''}
-                {photographerFilter ? ` by ${photographerFilter}` : ''}.
+                {photographerFilter ? ` by ${photographerFilter}` : ''}
+                {peopleFilter ? ` featuring ${peopleFilter}` : ''}.
               </p>
             ) : null}
           </div>

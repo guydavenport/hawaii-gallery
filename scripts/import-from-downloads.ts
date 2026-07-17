@@ -115,6 +115,7 @@ async function main() {
     '../app/lib/thumbnail'
   );
   const { reverseGeocode } = await import('../app/lib/geocode');
+  const { matchFacesInPhoto } = await import('../app/lib/faces');
 
   const args = parseArgs();
   const downloadsDir = path.join(os.homedir(), 'Downloads');
@@ -170,6 +171,7 @@ async function main() {
     );
     const thumbnailKey = await createAndUploadThumbnail(key, buffer, c.parsed.type);
     const displayKey = await createAndUploadDisplayVersion(key, buffer, c.parsed.type);
+    const people = c.parsed.type === 'photo' ? await matchFacesInPhoto(buffer) : undefined;
 
     let location = args.location;
     if (location === 'Hawaii' && c.parsed.latitude != null && c.parsed.longitude != null) {
@@ -198,6 +200,7 @@ async function main() {
       owner: args.owner,
       thumbnailKey,
       displayKey,
+      people,
     });
   }
 

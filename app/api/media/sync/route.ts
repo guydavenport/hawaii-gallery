@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { listUploadedObjects, getObjectBuffer } from '@/app/lib/s3';
 import { createAndUploadThumbnail, createAndUploadDisplayVersion, generateThumbnailBuffer } from '@/app/lib/thumbnail';
+import { matchFacesInPhoto } from '@/app/lib/faces';
 import {
   deleteMediaItems,
   generateDescription,
@@ -77,11 +78,15 @@ export async function POST(request: NextRequest) {
       let thumbnailKey: string | undefined;
       let displayKey: string | undefined;
       let visionBuffer: Buffer | undefined;
+      let people: string[] | undefined;
       try {
         const buffer = await getObjectBuffer(raw.key);
         thumbnailKey = await createAndUploadThumbnail(raw.key, buffer, type);
         displayKey = await createAndUploadDisplayVersion(raw.key, buffer, type);
         visionBuffer = (await generateThumbnailBuffer(buffer)) ?? undefined;
+        if (type === 'photo') {
+          people = await matchFacesInPhoto(buffer);
+        }
       } catch (thumbError) {
         console.error('Thumbnail generation failed for', raw.key, thumbError);
       }
@@ -100,6 +105,7 @@ export async function POST(request: NextRequest) {
         owner,
         thumbnailKey,
         displayKey,
+        people,
       };
     })
   );

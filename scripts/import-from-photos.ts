@@ -141,6 +141,7 @@ async function main() {
     '../app/lib/thumbnail'
   );
   const { reverseGeocode } = await import('../app/lib/geocode');
+  const { matchFacesInPhoto } = await import('../app/lib/faces');
 
   const args = parseArgs();
   const state = await readState();
@@ -253,6 +254,7 @@ async function main() {
     );
     const thumbnailKey = await createAndUploadThumbnail(key, fileBuffer, type);
     const displayKey = await createAndUploadDisplayVersion(key, fileBuffer, type);
+    const people = type === 'photo' ? await matchFacesInPhoto(fileBuffer) : undefined;
 
     const title = location;
     const description = record.ai_caption
@@ -273,6 +275,7 @@ async function main() {
       owner: args.owner,
       thumbnailKey,
       displayKey,
+      people,
       sourceUuid: record.uuid,
     });
 

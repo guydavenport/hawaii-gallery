@@ -27,6 +27,7 @@ export interface MediaItem {
   hidden?: boolean;
   thumbnailKey?: string;
   displayKey?: string;
+  people?: string[];
 }
 
 export interface MediaItemWithUrl extends MediaItem {

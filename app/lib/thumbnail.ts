@@ -11,8 +11,12 @@ const execFileAsync = promisify(execFile);
 const THUMBNAIL_WIDTH = 480;
 const THUMBNAIL_QUALITY = 70;
 const DISPLAY_QUALITY = 88;
+// Rekognition rejects images over 5MB; 1920px wide keeps faces detectable
+// while comfortably staying under that limit.
+const REKOGNITION_MAX_WIDTH = 1920;
+const REKOGNITION_QUALITY = 85;
 
-const HEIC_EXTENSIONS = new Set(['.heic', '.heif']);
+export const HEIC_EXTENSIONS = new Set(['.heic', '.heif']);
 
 // sharp's bundled libvips can't decode HEIC (patent-encumbered HEVC codec is
 // excluded from the prebuilt binaries). Fall back to macOS's built-in `sips`,
@@ -56,6 +60,12 @@ export async function generateThumbnailBuffer(input: Buffer): Promise<Buffer | n
 // formats (HEIC/HEIF) that most browsers can't decode in an <img> tag.
 export async function generateDisplayBuffer(input: Buffer): Promise<Buffer | null> {
   return convertToJpeg(input, DISPLAY_QUALITY);
+}
+
+// JPEG sized for Rekognition (handles both the 5MB API limit and HEIC
+// sources, which Rekognition can't accept directly).
+export async function generateRekognitionBuffer(input: Buffer): Promise<Buffer | null> {
+  return convertToJpeg(input, REKOGNITION_QUALITY, REKOGNITION_MAX_WIDTH);
 }
 
 // Lives under a separate top-level prefix (not /uploads/) so it's never
