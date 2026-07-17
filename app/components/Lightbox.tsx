@@ -17,7 +17,8 @@ interface LightboxProps {
 }
 
 export default function Lightbox({ items, index, role, onClose, onNavigate, onUpdate }: LightboxProps) {
-  const item = items[index];
+  const [displayedIndex, setDisplayedIndex] = useState(index);
+  const item = items[displayedIndex];
   const [isEditing, setIsEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const [descriptionDraft, setDescriptionDraft] = useState('');
@@ -27,6 +28,34 @@ export default function Lightbox({ items, index, role, onClose, onNavigate, onUp
   useEffect(() => {
     setIsEditing(false);
   }, [index]);
+
+  // The caption/title are plain state derived from `index` and update
+  // instantly, but the <img> keeps its previous pixels on screen until the
+  // new src finishes loading -- without this, the old photo briefly pairs
+  // with the new caption. Preload off-screen and only advance the displayed
+  // item (image + caption together) once the target is actually ready.
+  useEffect(() => {
+    const target = items[index];
+    if (!target) return;
+    if (target.type === 'video') {
+      setDisplayedIndex(index);
+      return;
+    }
+    let cancelled = false;
+    const preload = new window.Image();
+    preload.src = target.displayUrl;
+    const commit = () => {
+      if (!cancelled) setDisplayedIndex(index);
+    };
+    if (preload.complete) commit();
+    else {
+      preload.onload = commit;
+      preload.onerror = commit;
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [index, items]);
 
   useEffect(() => {
     function handleKey(event: KeyboardEvent) {
@@ -76,7 +105,11 @@ export default function Lightbox({ items, index, role, onClose, onNavigate, onUp
         {item.type === 'video' ? (
           <video controls autoPlay src={item.url} style={mediaStyle} />
         ) : (
-          <img src={item.displayUrl} alt={item.title} style={mediaStyle} />
+          <img
+            src={item.displayUrl}
+            alt={item.title}
+            style={{ ...mediaStyle, opacity: index === displayedIndex ? 1 : 0.5, transition: 'opacity 0.15s' }}
+          />
         )}
         <div style={captionStyle}>
           {isEditing ? (
@@ -103,7 +136,7 @@ export default function Lightbox({ items, index, role, onClose, onNavigate, onUp
               <h3 style={{ margin: '0 0 0.35rem' }}>{item.title}</h3>
               <p style={{ margin: 0, color: '#cbd5e1' }}>{item.description}</p>
               <p style={{ margin: '0.35rem 0 0', color: '#94a3b8', fontSize: '0.9rem' }}>
-                {item.location} · Photo by {item.owner} · {index + 1} of {items.length}
+                {item.location} · Photo by {item.owner} · {displayedIndex + 1} of {items.length}
               </p>
               <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', marginTop: '0.75rem' }}>
                 <button type="button" style={smallButtonStyle} onClick={() => downloadFile(item.url, item.filename)}>

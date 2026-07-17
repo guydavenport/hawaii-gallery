@@ -205,9 +205,22 @@ async function main() {
     const people = type === 'photo' ? await matchFacesInPhoto(fileBuffer) : undefined;
 
     const title = location;
-    const description = record.ai_caption
-      ? capitalize(record.ai_caption)
-      : await generateDescription(title, type, location, (await generateThumbnailBuffer(fileBuffer)) ?? undefined);
+    let description: string;
+    let descriptionSource: MediaItem['descriptionSource'];
+    if (record.ai_caption) {
+      description = capitalize(record.ai_caption);
+      descriptionSource = 'personal';
+    } else {
+      const generated = await generateDescription(
+        title,
+        type,
+        location,
+        (await generateThumbnailBuffer(fileBuffer)) ?? undefined,
+        people
+      );
+      description = generated.description;
+      descriptionSource = generated.source;
+    }
 
     mediaItems.push({
       id: crypto.randomUUID(),
@@ -224,6 +237,7 @@ async function main() {
       thumbnailKey,
       displayKey,
       people,
+      descriptionSource,
       sourceUuid: record.uuid,
     });
   }

@@ -50,8 +50,8 @@ async function main() {
       console.warn(`  Could not resolve location for ${item.filename} (${item.latitude}, ${item.longitude})`);
       continue;
     }
-    const description = await generateDescription(location, item.type, location);
-    await saveMediaItem({ ...item, title: location, location, description });
+    const { description, source: descriptionSource } = await generateDescription(location, item.type, location);
+    await saveMediaItem({ ...item, title: location, location, description, descriptionSource });
     updated++;
     if (updated % 10 === 0) console.log(`  ${updated}/${missing.length} done...`);
   }

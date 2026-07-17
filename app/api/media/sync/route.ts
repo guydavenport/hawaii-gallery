@@ -91,7 +91,13 @@ export async function POST(request: NextRequest) {
         console.error('Thumbnail generation failed for', raw.key, thumbError);
       }
 
-      const description = await generateDescription(title, type, location, visionBuffer);
+      const { description, source: descriptionSource } = await generateDescription(
+        title,
+        type,
+        location,
+        visionBuffer,
+        people
+      );
 
       return {
         id: crypto.randomUUID(),
@@ -106,6 +112,7 @@ export async function POST(request: NextRequest) {
         thumbnailKey,
         displayKey,
         people,
+        descriptionSource,
       };
     })
   );

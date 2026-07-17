@@ -80,8 +80,16 @@ export async function POST(request: NextRequest) {
           console.error('Thumbnail generation failed for', raw.key, thumbError);
         }
 
-        const description =
-          raw.description?.trim() || (await generateDescription(title, type, location, visionBuffer));
+        let description: string;
+        let descriptionSource: MediaItem['descriptionSource'];
+        if (raw.description?.trim()) {
+          description = raw.description.trim();
+          descriptionSource = 'manual';
+        } else {
+          const generated = await generateDescription(title, type, location, visionBuffer, people);
+          description = generated.description;
+          descriptionSource = generated.source;
+        }
 
         const item: MediaItem = {
           id: crypto.randomUUID(),
@@ -98,6 +106,7 @@ export async function POST(request: NextRequest) {
           thumbnailKey,
           displayKey,
           people,
+          descriptionSource,
         };
         return item;
       })

@@ -10,9 +10,19 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   }
 
   const body = await request.json();
-  const updates: { description?: string; hidden?: boolean; title?: string; location?: string; owner?: string } = {};
+  const updates: {
+    description?: string;
+    hidden?: boolean;
+    title?: string;
+    location?: string;
+    owner?: string;
+    descriptionSource?: 'manual';
+  } = {};
 
-  if (typeof body?.description === 'string') updates.description = body.description.trim();
+  if (typeof body?.description === 'string') {
+    updates.description = body.description.trim();
+    updates.descriptionSource = 'manual';
+  }
   if (typeof body?.hidden === 'boolean') updates.hidden = body.hidden;
   if (typeof body?.title === 'string' && body.title.trim()) updates.title = body.title.trim();
   if (typeof body?.location === 'string' && body.location.trim()) updates.location = body.location.trim();

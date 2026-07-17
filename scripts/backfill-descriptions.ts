@@ -71,13 +71,19 @@ async function main() {
         console.warn(`  Could not decode image for ${item.filename}`);
         return;
       }
-      const description = await generateDescription(item.title, item.type, item.location, thumbBuffer);
+      const { description, source: descriptionSource } = await generateDescription(
+        item.title,
+        item.type,
+        item.location,
+        thumbBuffer,
+        item.people
+      );
       if (description === buildFallbackDescription(item.title, item.type)) {
         failed++;
         console.warn(`  Vision caption failed for ${item.filename}, left unchanged`);
         return;
       }
-      await saveMediaItem({ ...item, description });
+      await saveMediaItem({ ...item, description, descriptionSource });
       done++;
       if (done % 10 === 0) console.log(`  ${done}/${generic.length} done...`);
     } catch (error) {

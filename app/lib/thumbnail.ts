@@ -4,6 +4,7 @@ import { promisify } from 'util';
 import { promises as fsp } from 'fs';
 import os from 'os';
 import path from 'path';
+import ffmpegPath from 'ffmpeg-static';
 import { putObject } from '@/app/lib/s3';
 
 const execFileAsync = promisify(execFile);
@@ -68,6 +69,45 @@ export async function generateRekognitionBuffer(input: Buffer): Promise<Buffer |
   return convertToJpeg(input, REKOGNITION_QUALITY, REKOGNITION_MAX_WIDTH);
 }
 
+async function extractFrame(srcPath: string, outPath: string, seekTime: string): Promise<Buffer | null> {
+  try {
+    await execFileAsync(ffmpegPath!, [
+      '-y',
+      '-ss', seekTime,
+      '-i', srcPath,
+      '-frames:v', '1',
+      '-vf', `scale=${THUMBNAIL_WIDTH}:-2`,
+      '-q:v', '4',
+      outPath,
+    ]);
+    return await fsp.readFile(outPath);
+  } catch {
+    return null;
+  }
+}
+
+// Extracts a still frame from a video for the grid thumbnail (a bare
+// <video> with no poster shows blank until playback starts in most
+// browsers). Seeks to 0.5s in first -- early enough to work for most clips,
+// late enough to skip an all-black opening frame -- falling back to the
+// very first frame for very short clips (some Live Photo motion companions)
+// where input-seeking to 0.5s lands past the end and yields nothing.
+export async function generateVideoThumbnailBuffer(input: Buffer): Promise<Buffer | null> {
+  if (!ffmpegPath) return null;
+  let tmpDir: string | undefined;
+  try {
+    tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'vidthumb-'));
+    const srcPath = path.join(tmpDir, 'src');
+    const outPath = path.join(tmpDir, 'out.jpg');
+    await fsp.writeFile(srcPath, input);
+    return (await extractFrame(srcPath, outPath, '00:00:00.5')) ?? (await extractFrame(srcPath, outPath, '0'));
+  } catch {
+    return null;
+  } finally {
+    if (tmpDir) await fsp.rm(tmpDir, { recursive: true, force: true });
+  }
+}
+
 // Lives under a separate top-level prefix (not /uploads/) so it's never
 // picked up by the "Sync with S3" scan, which lists everything under /uploads/.
 export function thumbnailKeyFor(key: string): string {
@@ -80,14 +120,13 @@ export function displayKeyFor(key: string): string {
   return `display/${name.replace(/\.[^.]+$/, '')}.jpg`;
 }
 
-/** Generates a thumbnail from a photo buffer and uploads it; returns the key, or undefined if it's a video or generation failed. */
+/** Generates a thumbnail (still frame for video, resized JPEG for photo) and uploads it; returns the key, or undefined if generation failed. */
 export async function createAndUploadThumbnail(
   key: string,
   buffer: Buffer,
   type: 'photo' | 'video'
 ): Promise<string | undefined> {
-  if (type !== 'photo') return undefined;
-  const thumbBuffer = await generateThumbnailBuffer(buffer);
+  const thumbBuffer = type === 'photo' ? await generateThumbnailBuffer(buffer) : await generateVideoThumbnailBuffer(buffer);
   if (!thumbBuffer) return undefined;
   const thumbKey = thumbnailKeyFor(key);
   await putObject(thumbKey, thumbBuffer, 'image/jpeg');

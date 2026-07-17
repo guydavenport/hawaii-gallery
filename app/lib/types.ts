@@ -15,4 +15,5 @@ export interface MediaItem {
   owner: string;
   hidden?: boolean;
   people?: string[];
+  descriptionSource?: 'vision' | 'personal' | 'manual' | 'fallback';
 }

@@ -179,11 +179,12 @@ async function main() {
       if (geocoded) location = geocoded;
     }
     const title = location;
-    const description = await generateDescription(
+    const { description, source: descriptionSource } = await generateDescription(
       title,
       c.parsed.type,
       location,
-      (await generateThumbnailBuffer(buffer)) ?? undefined
+      (await generateThumbnailBuffer(buffer)) ?? undefined,
+      people
     );
 
     mediaItems.push({
@@ -201,6 +202,7 @@ async function main() {
       thumbnailKey,
       displayKey,
       people,
+      descriptionSource,
     });
   }
 

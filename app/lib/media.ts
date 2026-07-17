@@ -10,6 +10,7 @@ import {
 import { createViewUrl } from '@/app/lib/s3';
 
 export type MediaType = 'photo' | 'video';
+export type DescriptionSource = 'vision' | 'personal' | 'manual' | 'fallback';
 
 export interface MediaItem {
   id: string;
@@ -28,6 +29,7 @@ export interface MediaItem {
   thumbnailKey?: string;
   displayKey?: string;
   people?: string[];
+  descriptionSource?: DescriptionSource;
 }
 
 export interface MediaItemWithUrl extends MediaItem {
@@ -117,7 +119,7 @@ export async function deleteMediaItems(ids: string[]) {
 
 export async function updateMediaItem(
   id: string,
-  updates: Partial<Pick<MediaItem, 'description' | 'hidden' | 'title' | 'location' | 'owner'>>
+  updates: Partial<Pick<MediaItem, 'description' | 'hidden' | 'title' | 'location' | 'owner' | 'descriptionSource'>>
 ): Promise<MediaItem | null> {
   const entries = Object.entries(updates).filter(([, value]) => value !== undefined);
   if (entries.length === 0) return null;
@@ -175,13 +177,23 @@ export function buildFallbackDescription(title: string, type: MediaType) {
   return `A ${typeLabel} from the Hawaii trip captured as ${title.toLowerCase() || 'a memorable moment'}.`;
 }
 
-const VISION_PROMPT_TEMPLATE = (location: string) =>
-  `This photo is from a private family trip to Hawaii${location && location !== 'Hawaii' ? `, taken near ${location}` : ''}. ` +
-  `Write exactly one short, warm sentence (under 20 words) describing what is actually visible in the photo -- ` +
-  `people, activities, food, scenery, or notable details. Don't invent names for people; refer to them generically ` +
-  `("a person", "two kids"). Don't mention that it's Hawaii or add generic filler. Reply with only the sentence, no preamble.`;
+const VISION_PROMPT_TEMPLATE = (location: string, people: string[]) => {
+  const peopleClause =
+    people.length > 0
+      ? ` The people in this photo have been identified as: ${people.join(', ')}. Use their actual names naturally ` +
+        `in the caption instead of generic terms like "a person" or "two people" -- but only if the photo is really ` +
+        `about them; don't force names into a caption about scenery, food, or an object.`
+      : ` Don't invent names for people; refer to them generically ("a person", "two kids").`;
 
-async function generateVisionCaption(imageBuffer: Buffer, location: string): Promise<string | null> {
+  return (
+    `This photo is from a private family trip to Hawaii${location && location !== 'Hawaii' ? `, taken near ${location}` : ''}. ` +
+    `Write exactly one short, warm sentence (under 20 words) describing what is actually visible in the photo -- ` +
+    `people, activities, food, scenery, or notable details.${peopleClause} Don't mention that it's Hawaii or add ` +
+    `generic filler. Reply with only the sentence, no preamble.`
+  );
+};
+
+async function generateVisionCaption(imageBuffer: Buffer, location: string, people: string[]): Promise<string | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return null;
 
@@ -204,7 +216,7 @@ async function generateVisionCaption(imageBuffer: Buffer, location: string): Pro
                 type: 'image',
                 source: { type: 'base64', media_type: 'image/jpeg', data: imageBuffer.toString('base64') },
               },
-              { type: 'text', text: VISION_PROMPT_TEMPLATE(location) },
+              { type: 'text', text: VISION_PROMPT_TEMPLATE(location, people) },
             ],
           },
         ],
@@ -234,11 +246,12 @@ export async function generateDescription(
   title: string,
   type: MediaType,
   location: string,
-  imageBuffer?: Buffer
-): Promise<string> {
+  imageBuffer?: Buffer,
+  people: string[] = []
+): Promise<{ description: string; source: DescriptionSource }> {
   if (imageBuffer && type === 'photo') {
-    const caption = await generateVisionCaption(imageBuffer, location);
-    if (caption) return caption;
+    const caption = await generateVisionCaption(imageBuffer, location, people);
+    if (caption) return { description: caption, source: 'vision' };
   }
-  return buildFallbackDescription(title, type);
+  return { description: buildFallbackDescription(title, type), source: 'fallback' };
 }

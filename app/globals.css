@@ -33,6 +33,12 @@ a {
   }
 }
 
+/* Nav buttons show a text label by default; the mobile media query below
+   swaps to an icon-only row so the sticky header stays compact on phones. */
+.nav-icon {
+  display: none;
+}
+
 @media (max-width: 640px) {
   .gallery-header {
     flex-direction: column !important;
@@ -40,24 +46,29 @@ a {
   }
 
   .gallery-header-nav {
-    display: grid !important;
-    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    display: flex !important;
+    flex-wrap: nowrap;
     width: 100%;
-    gap: 0.5rem !important;
+    justify-content: space-between;
+    gap: 0.4rem !important;
   }
 
   .gallery-header-nav a,
   .gallery-header-nav button {
+    padding: 0.55rem !important;
+    min-width: 40px;
     text-align: center;
     justify-content: center;
   }
 
-  .photo-grid {
-    grid-template-columns: repeat(2, 1fr) !important;
+  .nav-label {
+    display: none;
   }
-}
 
-@media (max-width: 420px) {
+  .nav-icon {
+    display: inline;
+  }
+
   .photo-grid {
     grid-template-columns: repeat(1, 1fr) !important;
   }
