@@ -40,6 +40,7 @@ export default function GalleryApp() {
   const [editOwnerDraft, setEditOwnerDraft] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [downloading, setDownloading] = useState(false);
@@ -268,8 +269,9 @@ export default function GalleryApp() {
       <div style={{ maxWidth: 1100, margin: '0 auto', display: 'grid', gap: '1.5rem' }}>
         <header className="gallery-header" style={stickyHeaderStyle}>
           <div>
-            <p style={{ margin: 0, textTransform: 'uppercase', letterSpacing: '0.3em', color: '#7dd3fc' }}>Hawaii trip gallery</p>
-            <h1 style={{ margin: '0.35rem 0 0', fontSize: 'clamp(1.4rem, 5vw, 2rem)' }}>Private gallery for photos and videos</h1>
+            <h1 style={{ margin: 0, textTransform: 'uppercase', letterSpacing: '0.3em', color: '#7dd3fc', fontSize: 'clamp(1rem, 3vw, 1.15rem)', fontWeight: 700 }}>
+              O&apos;ahu July 2026
+            </h1>
           </div>
           <div className="gallery-header-nav" style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
             {isLoggedIn ? (
@@ -285,7 +287,7 @@ export default function GalleryApp() {
                 ) : null}
                 {dayGroups.length > 0 ? (
                   <button type="button" style={smallButtonStyle} onClick={() => setMenuOpen(true)}>
-                    &#9776; Jump to date
+                    Jump to date
                   </button>
                 ) : null}
                 {sortedItems.length > 0 ? (
@@ -301,19 +303,47 @@ export default function GalleryApp() {
                   </button>
                 ) : null}
                 <Link href="/map" style={linkStyle}>Map</Link>
-                {role === 'admin' ? (
+                <div style={{ position: 'relative' }}>
                   <button
                     type="button"
-                    style={previewAsGuest ? chipStyleActive : smallButtonStyle}
-                    onClick={() => setPreviewAsGuest((prev) => !prev)}
+                    style={accountMenuOpen || previewAsGuest ? chipStyleActive : smallButtonStyle}
+                    onClick={() => setAccountMenuOpen((prev) => !prev)}
+                    aria-label="Account menu"
                   >
-                    {previewAsGuest ? 'Exit guest preview' : 'Preview as guest'}
+                    &#128100;
                   </button>
-                ) : null}
-                {effectiveRole === 'admin' ? <Link href="/admin" style={linkStyle}>Admin</Link> : null}
-                <button type="button" style={{ ...buttonStyle, background: '#334155', color: 'white' }} onClick={handleLogout}>
-                  Sign out
-                </button>
+                  {accountMenuOpen ? (
+                    <>
+                      <div style={accountMenuBackdropStyle} onClick={() => setAccountMenuOpen(false)} />
+                      <div style={accountMenuStyle}>
+                        {role === 'admin' ? (
+                          <button
+                            type="button"
+                            style={accountMenuItemStyle}
+                            onClick={() => {
+                              setPreviewAsGuest((prev) => !prev);
+                              setAccountMenuOpen(false);
+                            }}
+                          >
+                            {previewAsGuest ? 'Exit guest preview' : 'Preview as guest'}
+                          </button>
+                        ) : null}
+                        {effectiveRole === 'admin' ? (
+                          <Link href="/admin" style={accountMenuItemStyle} onClick={() => setAccountMenuOpen(false)}>
+                            Admin
+                          </Link>
+                        ) : null}
+                        <button
+                          type="button"
+                          style={{ ...accountMenuItemStyle, color: '#fca5a5' }}
+                          onClick={handleLogout}
+                        >
+                          Sign out
+                        </button>
+                      </div>
+                    </>
+                  ) : null}
+                </div>
               </>
             ) : null}
           </div>
@@ -634,6 +664,43 @@ const linkStyle: CSSProperties = {
   color: '#7dd3fc',
   textDecoration: 'none',
   fontWeight: 600,
+};
+
+const accountMenuBackdropStyle: CSSProperties = {
+  position: 'fixed',
+  inset: 0,
+  background: 'transparent',
+  zIndex: 30,
+};
+
+const accountMenuStyle: CSSProperties = {
+  position: 'absolute',
+  top: 'calc(100% + 0.5rem)',
+  right: 0,
+  display: 'grid',
+  gap: '0.25rem',
+  background: '#0f172a',
+  border: '1px solid #334155',
+  borderRadius: 12,
+  padding: '0.5rem',
+  minWidth: 180,
+  boxShadow: '0 12px 32px rgba(0,0,0,0.5)',
+  zIndex: 31,
+};
+
+const accountMenuItemStyle: CSSProperties = {
+  display: 'block',
+  width: '100%',
+  textAlign: 'left',
+  padding: '0.6rem 0.75rem',
+  borderRadius: 8,
+  border: 'none',
+  background: 'transparent',
+  color: '#e2e8f0',
+  cursor: 'pointer',
+  fontSize: '0.9rem',
+  textDecoration: 'none',
+  boxSizing: 'border-box',
 };
 
 const backdropStyle: CSSProperties = {

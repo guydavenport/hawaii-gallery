@@ -129,7 +129,7 @@ export default function MapApp() {
     <div style={{ minHeight: '100vh', background: PAGE_BACKGROUND, backgroundAttachment: 'fixed', color: 'white' }}>
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.25rem 1.5rem', gap: '1rem', flexWrap: 'wrap' }}>
         <div>
-          <p style={{ margin: 0, textTransform: 'uppercase', letterSpacing: '0.3em', color: '#7dd3fc' }}>Hawaii trip gallery</p>
+          <p style={{ margin: 0, textTransform: 'uppercase', letterSpacing: '0.3em', color: '#7dd3fc' }}>O&apos;ahu July 2026</p>
           <h1 style={{ margin: '0.35rem 0 0', fontSize: '1.5rem' }}>Map</h1>
         </div>
         <Link href="/" style={linkStyle}>Back to gallery</Link>
