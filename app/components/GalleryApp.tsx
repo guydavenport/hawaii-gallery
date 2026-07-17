@@ -39,6 +39,7 @@ export default function GalleryApp() {
   const [editDraft, setEditDraft] = useState('');
   const [editOwnerDraft, setEditOwnerDraft] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [downloading, setDownloading] = useState(false);
@@ -249,6 +250,15 @@ export default function GalleryApp() {
     setMenuOpen(false);
   }
 
+  const activeFilterCount =
+    (searchQuery.trim() ? 1 : 0) + (photographerFilter ? 1 : 0) + (peopleFilter ? 1 : 0);
+
+  function clearAllFilters() {
+    setSearchQuery('');
+    setPhotographerFilter(null);
+    setPeopleFilter(null);
+  }
+
   if (checkingSession) {
     return null;
   }
@@ -256,7 +266,7 @@ export default function GalleryApp() {
   return (
     <div style={{ minHeight: '100vh', background: PAGE_BACKGROUND, backgroundAttachment: 'fixed', color: 'white', padding: '2rem 1.25rem' }}>
       <div style={{ maxWidth: 1100, margin: '0 auto', display: 'grid', gap: '1.5rem' }}>
-        <header className="gallery-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+        <header className="gallery-header" style={stickyHeaderStyle}>
           <div>
             <p style={{ margin: 0, textTransform: 'uppercase', letterSpacing: '0.3em', color: '#7dd3fc' }}>Hawaii trip gallery</p>
             <h1 style={{ margin: '0.35rem 0 0', fontSize: 'clamp(1.4rem, 5vw, 2rem)' }}>Private gallery for photos and videos</h1>
@@ -264,6 +274,15 @@ export default function GalleryApp() {
           <div className="gallery-header-nav" style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
             {isLoggedIn ? (
               <>
+                {sortedItems.length > 0 ? (
+                  <button
+                    type="button"
+                    style={activeFilterCount > 0 ? chipStyleActive : smallButtonStyle}
+                    onClick={() => setFiltersOpen(true)}
+                  >
+                    Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
+                  </button>
+                ) : null}
                 {dayGroups.length > 0 ? (
                   <button type="button" style={smallButtonStyle} onClick={() => setMenuOpen(true)}>
                     &#9776; Jump to date
@@ -311,59 +330,6 @@ export default function GalleryApp() {
           </div>
         ) : null}
 
-        {isLoggedIn && sortedItems.length > 0 ? (
-          <input
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder="Search by title, description, location, photographer, people, or date..."
-            style={inputStyle}
-          />
-        ) : null}
-
-        {isLoggedIn && photographers.length > 1 ? (
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              style={photographerFilter === null ? chipStyleActive : chipStyle}
-              onClick={() => setPhotographerFilter(null)}
-            >
-              All
-            </button>
-            {photographers.map(([owner, count]) => (
-              <button
-                key={owner}
-                type="button"
-                style={photographerFilter === owner ? chipStyleActive : chipStyle}
-                onClick={() => setPhotographerFilter(owner === photographerFilter ? null : owner)}
-              >
-                {owner} ({count})
-              </button>
-            ))}
-          </div>
-        ) : null}
-
-        {isLoggedIn && people.length > 0 ? (
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <span style={{ color: '#94a3b8', fontSize: '0.85rem', alignSelf: 'center', marginRight: '0.25rem' }}>People:</span>
-            <button
-              type="button"
-              style={peopleFilter === null ? chipStyleActive : chipStyle}
-              onClick={() => setPeopleFilter(null)}
-            >
-              All
-            </button>
-            {people.map(([name, count]) => (
-              <button
-                key={name}
-                type="button"
-                style={peopleFilter === name ? chipStyleActive : chipStyle}
-                onClick={() => setPeopleFilter(name === peopleFilter ? null : name)}
-              >
-                {name} ({count})
-              </button>
-            ))}
-          </div>
-        ) : null}
 
         {status ? <p style={{ color: '#fca5a5', margin: 0 }}>{status}</p> : null}
 
@@ -493,7 +459,15 @@ export default function GalleryApp() {
         )}
       </div>
 
-      {menuOpen ? <div style={backdropStyle} onClick={() => setMenuOpen(false)} /> : null}
+      {menuOpen || filtersOpen ? (
+        <div
+          style={backdropStyle}
+          onClick={() => {
+            setMenuOpen(false);
+            setFiltersOpen(false);
+          }}
+        />
+      ) : null}
       <nav style={{ ...sideMenuStyle, transform: menuOpen ? 'translateX(0)' : 'translateX(-100%)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
           <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Jump to date</h2>
@@ -513,6 +487,79 @@ export default function GalleryApp() {
               <span style={{ color: '#64748b', fontWeight: 400 }}> ({group.items.length})</span>
             </button>
           ))}
+        </div>
+      </nav>
+
+      <nav style={{ ...sideMenuStyleRight, transform: filtersOpen ? 'translateX(0)' : 'translateX(100%)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Filters</h2>
+          <button type="button" style={smallButtonStyle} onClick={() => setFiltersOpen(false)} aria-label="Close">
+            &times;
+          </button>
+        </div>
+        <div style={{ display: 'grid', gap: '1.25rem' }}>
+          <input
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Search by title, description, location, photographer, people, or date..."
+            style={inputStyle}
+          />
+
+          {photographers.length > 1 ? (
+            <div>
+              <p style={{ margin: '0 0 0.5rem', color: '#94a3b8', fontSize: '0.85rem' }}>Photographer</p>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  style={photographerFilter === null ? chipStyleActive : chipStyle}
+                  onClick={() => setPhotographerFilter(null)}
+                >
+                  All
+                </button>
+                {photographers.map(([owner, count]) => (
+                  <button
+                    key={owner}
+                    type="button"
+                    style={photographerFilter === owner ? chipStyleActive : chipStyle}
+                    onClick={() => setPhotographerFilter(owner === photographerFilter ? null : owner)}
+                  >
+                    {owner} ({count})
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {people.length > 0 ? (
+            <div>
+              <p style={{ margin: '0 0 0.5rem', color: '#94a3b8', fontSize: '0.85rem' }}>People</p>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  style={peopleFilter === null ? chipStyleActive : chipStyle}
+                  onClick={() => setPeopleFilter(null)}
+                >
+                  All
+                </button>
+                {people.map(([name, count]) => (
+                  <button
+                    key={name}
+                    type="button"
+                    style={peopleFilter === name ? chipStyleActive : chipStyle}
+                    onClick={() => setPeopleFilter(name === peopleFilter ? null : name)}
+                  >
+                    {name} ({count})
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {activeFilterCount > 0 ? (
+            <button type="button" style={smallButtonStyle} onClick={clearAllFilters}>
+              Clear all filters
+            </button>
+          ) : null}
         </div>
       </nav>
 
@@ -609,6 +656,32 @@ const sideMenuStyle: CSSProperties = {
   overflowY: 'auto',
   zIndex: 1100,
   transition: 'transform 0.25s ease',
+};
+
+const sideMenuStyleRight: CSSProperties = {
+  ...sideMenuStyle,
+  left: 'auto',
+  right: 0,
+  borderRight: 'none',
+  borderLeft: '1px solid #334155',
+  width: 320,
+};
+
+const stickyHeaderStyle: CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  gap: '1rem',
+  flexWrap: 'wrap',
+  position: 'sticky',
+  top: '1rem',
+  zIndex: 20,
+  background: 'rgba(10, 10, 12, 0.85)',
+  backdropFilter: 'blur(10px)',
+  WebkitBackdropFilter: 'blur(10px)',
+  border: '1px solid #334155',
+  borderRadius: 16,
+  padding: '1rem 1.25rem',
 };
 
 const dayMenuItemStyle: CSSProperties = {

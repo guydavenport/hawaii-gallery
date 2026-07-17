@@ -19,8 +19,18 @@ a {
   color: inherit;
 }
 
+/* Fixed column counts (not auto-fit/auto-fill): with a flexible track count,
+   a lone trailing card in the last row stretches to fill the full row width,
+   which at a fixed card height crops far more off the top/bottom than a
+   normally-sized card. */
 .photo-grid {
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
+}
+
+@media (max-width: 900px) {
+  .photo-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 @media (max-width: 640px) {
@@ -43,6 +53,12 @@ a {
   }
 
   .photo-grid {
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)) !important;
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+@media (max-width: 420px) {
+  .photo-grid {
+    grid-template-columns: repeat(1, 1fr) !important;
   }
 }
