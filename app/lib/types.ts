@@ -1,4 +1,4 @@
-export type DescriptionSource = 'vision' | 'personal' | 'manual' | 'fallback';
+export type DescriptionSource = 'vision' | 'manual' | 'fallback';
 
 export interface MediaItem {
   id: string;

@@ -10,7 +10,7 @@ import {
 import { createViewUrl } from '@/app/lib/s3';
 
 export type MediaType = 'photo' | 'video';
-export type DescriptionSource = 'vision' | 'personal' | 'manual' | 'fallback';
+export type DescriptionSource = 'vision' | 'manual' | 'fallback';
 
 export interface MediaItem {
   id: string;

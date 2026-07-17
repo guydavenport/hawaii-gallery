@@ -266,7 +266,7 @@ async function main() {
     let descriptionSource: MediaItem['descriptionSource'];
     if (record.ai_caption) {
       description = capitalize(record.ai_caption);
-      descriptionSource = 'personal';
+      descriptionSource = 'vision';
     } else {
       const generated = await generateDescription(
         title,

@@ -36,21 +36,22 @@ async function main() {
     aiCaptionByUuid = new Map(records.map((r) => [r.uuid, r.ai_caption]));
   }
 
-  const counts = { fallback: 0, personal: 0, vision: 0, manual: 0 };
-  const updates: { id: string; descriptionSource: 'fallback' | 'personal' | 'vision' | 'manual' }[] = [];
+  const counts = { fallback: 0, vision: 0, manual: 0 };
+  const updates: { id: string; descriptionSource: 'fallback' | 'vision' | 'manual' }[] = [];
 
   for (const item of items) {
-    let source: 'fallback' | 'personal' | 'vision' | 'manual';
+    let source: 'fallback' | 'vision' | 'manual';
 
     if (item.description === buildFallbackDescription(item.title, item.type)) {
       source = 'fallback';
     } else {
       const aiCaption = item.sourceUuid ? aiCaptionByUuid.get(item.sourceUuid) : null;
       if (aiCaption && capitalize(aiCaption) === item.description) {
-        source = 'personal';
+        // Apple's on-device auto-caption is AI-generated, not human-typed.
+        source = 'vision';
       } else if (item.type === 'video') {
         // Vision captioning only ever runs for photos, so a non-fallback,
-        // non-personal-caption video description can only be manual.
+        // non-Apple-caption video description can only be manual.
         source = 'manual';
       } else {
         // Best-effort: no stored audit trail distinguishes "vision, never

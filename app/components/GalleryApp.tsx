@@ -19,8 +19,6 @@ function descriptionSourceLabel(source: DescriptionSource): string {
   switch (source) {
     case 'vision':
       return 'AI-described';
-    case 'personal':
-      return 'Personal caption';
     case 'manual':
       return 'Manually edited';
     case 'fallback':
