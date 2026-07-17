@@ -108,6 +108,7 @@ async function main() {
   );
   const { reverseGeocode } = await import('../app/lib/geocode');
   const { matchFacesInPhoto } = await import('../app/lib/faces');
+  const { embedCopyright } = await import('../app/lib/copyright');
 
   const args = parseArgs();
   const uuids = (await fsp.readFile(args.uuidFile, 'utf8'))
@@ -190,6 +191,10 @@ async function main() {
     }
     const filename = `${path.basename(record.original_filename, path.extname(record.original_filename))}${ext}`;
     const key = `uploads/${record.uuid}-${filename}`;
+
+    if (type === 'photo') {
+      fileBuffer = embedCopyright(fileBuffer, args.owner);
+    }
 
     console.log(`  Uploading ${filename} -> s3://${getBucket()}/${key}`);
     await s3Client.send(

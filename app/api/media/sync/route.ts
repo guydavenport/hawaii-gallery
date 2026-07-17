@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { listUploadedObjects, getObjectBuffer } from '@/app/lib/s3';
+import { listUploadedObjects, getObjectBuffer, putObject } from '@/app/lib/s3';
 import { createAndUploadThumbnail, createAndUploadDisplayVersion, generateThumbnailBuffer } from '@/app/lib/thumbnail';
 import { matchFacesInPhoto } from '@/app/lib/faces';
+import { embedCopyright } from '@/app/lib/copyright';
 import {
   deleteMediaItems,
   generateDescription,
@@ -80,7 +81,14 @@ export async function POST(request: NextRequest) {
       let visionBuffer: Buffer | undefined;
       let people: string[] | undefined;
       try {
-        const buffer = await getObjectBuffer(raw.key);
+        let buffer = await getObjectBuffer(raw.key);
+        if (type === 'photo') {
+          const copyrighted = embedCopyright(buffer, owner);
+          if (copyrighted !== buffer) {
+            await putObject(raw.key, copyrighted, 'image/jpeg');
+            buffer = copyrighted;
+          }
+        }
         thumbnailKey = await createAndUploadThumbnail(raw.key, buffer, type);
         displayKey = await createAndUploadDisplayVersion(raw.key, buffer, type);
         visionBuffer = (await generateThumbnailBuffer(buffer)) ?? undefined;

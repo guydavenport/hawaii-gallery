@@ -116,6 +116,7 @@ async function main() {
   );
   const { reverseGeocode } = await import('../app/lib/geocode');
   const { matchFacesInPhoto } = await import('../app/lib/faces');
+  const { embedCopyright } = await import('../app/lib/copyright');
 
   const args = parseArgs();
   const downloadsDir = path.join(os.homedir(), 'Downloads');
@@ -155,10 +156,14 @@ async function main() {
 
   for (const c of newCandidates) {
     const filePath = path.join(downloadsDir, c.filename);
-    const buffer = await fsp.readFile(filePath);
+    let buffer = await fsp.readFile(filePath);
     const id = crypto.randomUUID();
     const safeName = c.filename.replace(/[^a-zA-Z0-9._-]/g, '-');
     const key = `uploads/${id}-${safeName}`;
+
+    if (c.parsed.type === 'photo') {
+      buffer = embedCopyright(buffer, args.owner);
+    }
 
     console.log(`  Uploading ${c.filename} -> s3://${getBucket()}/${key}`);
     await s3Client.send(

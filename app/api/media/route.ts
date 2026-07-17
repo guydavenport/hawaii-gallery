@@ -11,9 +11,10 @@ import {
 } from '@/app/lib/media';
 import { requireSession, requireAdmin } from '@/app/lib/auth';
 import { ensureConfigLoaded } from '@/app/lib/runtime-config';
-import { getObjectBuffer } from '@/app/lib/s3';
+import { getObjectBuffer, putObject } from '@/app/lib/s3';
 import { createAndUploadThumbnail, createAndUploadDisplayVersion, generateThumbnailBuffer } from '@/app/lib/thumbnail';
 import { matchFacesInPhoto } from '@/app/lib/faces';
+import { embedCopyright } from '@/app/lib/copyright';
 
 interface RegisterRequestItem {
   key: string;
@@ -69,7 +70,14 @@ export async function POST(request: NextRequest) {
         let visionBuffer: Buffer | undefined;
         let people: string[] | undefined;
         try {
-          const buffer = await getObjectBuffer(raw.key);
+          let buffer = await getObjectBuffer(raw.key);
+          if (type === 'photo') {
+            const copyrighted = embedCopyright(buffer, owner);
+            if (copyrighted !== buffer) {
+              await putObject(raw.key, copyrighted, 'image/jpeg');
+              buffer = copyrighted;
+            }
+          }
           thumbnailKey = await createAndUploadThumbnail(raw.key, buffer, type);
           displayKey = await createAndUploadDisplayVersion(raw.key, buffer, type);
           visionBuffer = (await generateThumbnailBuffer(buffer)) ?? undefined;
