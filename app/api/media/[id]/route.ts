@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { updateMediaItem, withViewUrls } from '@/app/lib/media';
+import { getMediaItemById, updateMediaItem, withViewUrls } from '@/app/lib/media';
 import { requireAdmin } from '@/app/lib/auth';
 import { ensureConfigLoaded } from '@/app/lib/runtime-config';
 
@@ -19,10 +19,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     descriptionSource?: 'manual';
   } = {};
 
-  if (typeof body?.description === 'string') {
-    updates.description = body.description.trim();
-    updates.descriptionSource = 'manual';
-  }
+  if (typeof body?.description === 'string') updates.description = body.description.trim();
   if (typeof body?.hidden === 'boolean') updates.hidden = body.hidden;
   if (typeof body?.title === 'string' && body.title.trim()) updates.title = body.title.trim();
   if (typeof body?.location === 'string' && body.location.trim()) updates.location = body.location.trim();
@@ -30,6 +27,15 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 });
+  }
+
+  if (updates.title !== undefined && updates.description !== undefined) {
+    const current = await getMediaItemById(params.id);
+    const titleChanged = !current || updates.title !== current.title;
+    const descriptionChanged = !current || updates.description !== current.description;
+    if (titleChanged && descriptionChanged) {
+      updates.descriptionSource = 'manual';
+    }
   }
 
   const updated = await updateMediaItem(params.id, updates);

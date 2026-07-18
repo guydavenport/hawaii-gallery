@@ -3,6 +3,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
   DynamoDBDocumentClient,
   ScanCommand,
+  GetCommand,
   PutCommand,
   BatchWriteCommand,
   UpdateCommand,
@@ -77,6 +78,12 @@ export async function readMediaItems(): Promise<MediaItem[]> {
   } while (lastEvaluatedKey);
 
   return items.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+export async function getMediaItemById(id: string): Promise<MediaItem | null> {
+  const tableName = getTableName();
+  const response = await docClient.send(new GetCommand({ TableName: tableName, Key: { id } }));
+  return (response.Item as MediaItem) || null;
 }
 
 export async function saveMediaItem(item: MediaItem) {
