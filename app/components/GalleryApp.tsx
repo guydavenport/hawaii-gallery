@@ -61,6 +61,7 @@ export default function GalleryApp() {
   const [typeFilter, setTypeFilter] = useState<'photo' | 'video' | null>(null);
   const [descriptionSourceFilter, setDescriptionSourceFilter] = useState<DescriptionSource | null>(null);
   const [previewAsGuest, setPreviewAsGuest] = useState(false);
+  const [adminLoginMode, setAdminLoginMode] = useState(false);
 
   const effectiveRole = previewAsGuest ? 'guest' : role;
 
@@ -389,7 +390,20 @@ export default function GalleryApp() {
                   ) : null}
                 </div>
               </>
-            ) : null}
+            ) : (
+              <button
+                type="button"
+                style={smallButtonStyle}
+                onClick={() => {
+                  setAdminLoginMode((prev) => !prev);
+                  setEmail('');
+                  setPassword('');
+                  setStatus('');
+                }}
+              >
+                {adminLoginMode ? 'Guest sign in' : 'Admin sign in'}
+              </button>
+            )}
           </div>
         </header>
 
@@ -409,9 +423,11 @@ export default function GalleryApp() {
 
         {!isLoggedIn ? (
           <section style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: 20, padding: '1.2rem' }}>
-            <h2 style={{ marginTop: 0 }}>Sign in</h2>
+            <h2 style={{ marginTop: 0 }}>{adminLoginMode ? 'Admin sign in' : 'Sign in'}</h2>
             <form onSubmit={handleLogin} style={{ display: 'grid', gap: '0.75rem', maxWidth: 480 }}>
-              <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email (leave blank for guest access)" style={inputStyle} />
+              {adminLoginMode ? (
+                <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email" style={inputStyle} />
+              ) : null}
               <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password" type="password" style={inputStyle} />
               <button type="submit" style={buttonStyle}>Sign in</button>
             </form>
