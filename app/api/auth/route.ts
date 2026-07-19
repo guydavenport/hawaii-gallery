@@ -32,8 +32,12 @@ export async function POST(request: NextRequest) {
     }
     session = { username: email, role: 'admin' };
   } else {
-    const guestPassword = process.env.GUEST_PASSWORD || '';
-    if (!guestPassword || !timingSafeEqual(password, guestPassword)) {
+    const guestPasswords = (process.env.GUEST_PASSWORD || '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean);
+    const valid = guestPasswords.some((guestPassword) => timingSafeEqual(password, guestPassword));
+    if (!valid) {
       return NextResponse.json({ error: 'Invalid password' }, { status: 401 });
     }
     session = { username: 'guest', role: 'guest' };
