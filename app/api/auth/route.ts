@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyCognitoCredentials } from '@/app/lib/cognito';
+import { resolveAccess } from '@/app/lib/access-control';
 import { createSessionToken, requireSession, timingSafeEqual, SESSION_COOKIE_NAME } from '@/app/lib/auth';
 import { ensureConfigLoaded } from '@/app/lib/runtime-config';
 
@@ -26,11 +27,20 @@ export async function POST(request: NextRequest) {
   let session: { username: string; role: 'admin' | 'guest' };
 
   if (email) {
-    const valid = await verifyCognitoCredentials(email, password);
-    if (!valid) {
+    const authResult = await verifyCognitoCredentials(email, password);
+    if (!authResult) {
       return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
     }
-    session = { username: email, role: 'admin' };
+    const resolution = await resolveAccess({
+      email: authResult.email,
+      name: authResult.name,
+      provider: 'cognito',
+      providerId: authResult.email,
+    });
+    if (resolution.status !== 'approved') {
+      return NextResponse.json({ accessStatus: resolution.status }, { status: 403 });
+    }
+    session = { username: authResult.email, role: resolution.role };
   } else {
     const guestPasswords = (process.env.GUEST_PASSWORD || '')
       .split(',')

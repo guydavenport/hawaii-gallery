@@ -26,6 +26,19 @@ function descriptionSourceLabel(source: DescriptionSource): string {
   }
 }
 
+function accessStatusMessage(status: string): string {
+  switch (status) {
+    case 'pending':
+      return "Your request has been sent — you'll get access once it's approved.";
+    case 'denied':
+      return 'Your access request was not approved.';
+    case 'unavailable':
+      return "That sign-in method isn't available right now.";
+    default:
+      return 'Something went wrong with that sign-in attempt — please try again.';
+  }
+}
+
 function dayLabel(createdAt: string) {
   return new Intl.DateTimeFormat('en-US', {
     timeZone: HAWAII_TZ,
@@ -61,7 +74,14 @@ export default function GalleryApp() {
   const [typeFilter, setTypeFilter] = useState<'photo' | 'video' | null>(null);
   const [descriptionSourceFilter, setDescriptionSourceFilter] = useState<DescriptionSource | null>(null);
   const [previewAsGuest, setPreviewAsGuest] = useState(false);
-  const [adminLoginMode, setAdminLoginMode] = useState(false);
+  const [authView, setAuthView] = useState<
+    'guest' | 'email-signin' | 'email-signup' | 'email-confirm' | 'email-forgot' | 'email-reset'
+  >('guest');
+  const [name, setName] = useState('');
+  const [code, setCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [oauthProviders, setOauthProviders] = useState<{ id: string; label: string }[]>([]);
+  const [accessStatus, setAccessStatus] = useState<string | null>(null);
 
   const effectiveRole = previewAsGuest ? 'guest' : role;
 
@@ -95,6 +115,19 @@ export default function GalleryApp() {
 
   useEffect(() => {
     checkSession();
+    fetch('/api/oauth-providers')
+      .then((res) => res.json())
+      .then((data) => setOauthProviders(Array.isArray(data.providers) ? data.providers : []))
+      .catch(() => setOauthProviders([]));
+
+    const params = new URLSearchParams(window.location.search);
+    const status = params.get('accessStatus');
+    if (status) {
+      setAccessStatus(status);
+      params.delete('accessStatus');
+      const query = params.toString();
+      window.history.replaceState(null, '', query ? `?${query}` : window.location.pathname);
+    }
   }, []);
 
   async function handleLogin(event: FormEvent) {
@@ -114,7 +147,89 @@ export default function GalleryApp() {
       await loadItems();
     } else {
       const error = await response.json().catch(() => ({}));
-      setStatus(error.error || 'Login failed');
+      if (error.accessStatus) {
+        setAccessStatus(error.accessStatus);
+        setStatus('');
+      } else {
+        setStatus(error.error || 'Login failed');
+      }
+    }
+  }
+
+  async function handleSignup(event: FormEvent) {
+    event.preventDefault();
+    setStatus('Creating account...');
+    const response = await fetch('/api/auth/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, name }),
+    });
+    if (response.ok) {
+      setStatus('');
+      setPassword('');
+      setAuthView('email-confirm');
+    } else {
+      const error = await response.json().catch(() => ({}));
+      setStatus(error.error || 'Sign up failed');
+    }
+  }
+
+  async function handleConfirmSignup(event: FormEvent) {
+    event.preventDefault();
+    setStatus('Confirming...');
+    const response = await fetch('/api/auth/confirm-signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, code }),
+    });
+    if (response.ok) {
+      setStatus('Account confirmed — sign in below.');
+      setCode('');
+      setAuthView('email-signin');
+    } else {
+      const error = await response.json().catch(() => ({}));
+      setStatus(error.error || 'Confirmation failed');
+    }
+  }
+
+  async function handleResendCode() {
+    setStatus('Resending code...');
+    await fetch('/api/auth/resend-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    setStatus('If that account exists, a new code was sent.');
+  }
+
+  async function handleForgotPassword(event: FormEvent) {
+    event.preventDefault();
+    setStatus('Sending reset code...');
+    await fetch('/api/auth/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    setStatus('If that account exists, a reset code was sent.');
+    setAuthView('email-reset');
+  }
+
+  async function handleResetPassword(event: FormEvent) {
+    event.preventDefault();
+    setStatus('Resetting password...');
+    const response = await fetch('/api/auth/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, code, password: newPassword }),
+    });
+    if (response.ok) {
+      setStatus('Password reset — sign in below.');
+      setCode('');
+      setNewPassword('');
+      setAuthView('email-signin');
+    } else {
+      const error = await response.json().catch(() => ({}));
+      setStatus(error.error || 'Reset failed');
     }
   }
 
@@ -395,13 +510,14 @@ export default function GalleryApp() {
                 type="button"
                 style={smallButtonStyle}
                 onClick={() => {
-                  setAdminLoginMode((prev) => !prev);
+                  setAuthView((prev) => (prev === 'guest' ? 'email-signin' : 'guest'));
                   setEmail('');
                   setPassword('');
                   setStatus('');
+                  setAccessStatus(null);
                 }}
               >
-                {adminLoginMode ? 'Guest sign in' : 'Admin sign in'}
+                {authView === 'guest' ? 'Sign in with email' : 'Guest sign in'}
               </button>
             )}
           </div>
@@ -421,16 +537,119 @@ export default function GalleryApp() {
 
         {status ? <p style={{ color: '#fca5a5', margin: 0 }}>{status}</p> : null}
 
+        {accessStatus ? (
+          <p style={{ color: accessStatus === 'pending' ? '#7dd3fc' : '#fca5a5', margin: 0 }}>
+            {accessStatusMessage(accessStatus)}
+          </p>
+        ) : null}
+
         {!isLoggedIn ? (
           <section style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: 20, padding: '1.2rem' }}>
-            <h2 style={{ marginTop: 0 }}>{adminLoginMode ? 'Admin sign in' : 'Sign in'}</h2>
-            <form onSubmit={handleLogin} style={{ display: 'grid', gap: '0.75rem', maxWidth: 480 }}>
-              {adminLoginMode ? (
-                <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email" style={inputStyle} />
-              ) : null}
-              <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password" type="password" style={inputStyle} />
-              <button type="submit" style={buttonStyle}>Sign in</button>
-            </form>
+            {authView === 'guest' ? (
+              <>
+                <h2 style={{ marginTop: 0 }}>Sign in</h2>
+                <form onSubmit={handleLogin} style={{ display: 'grid', gap: '0.75rem', maxWidth: 480 }}>
+                  <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password" type="password" style={inputStyle} />
+                  <button type="submit" style={buttonStyle}>Sign in</button>
+                </form>
+                {oauthProviders.length > 0 ? (
+                  <div style={{ display: 'grid', gap: '0.6rem', maxWidth: 480, marginTop: '1rem' }}>
+                    <p style={{ margin: 0, color: '#64748b', fontSize: '0.85rem' }}>or</p>
+                    {oauthProviders.map((provider) => (
+                      <a key={provider.id} href={`/api/auth/oauth/${provider.id}/start`} style={oauthButtonStyle}>
+                        Sign in with {provider.label}
+                      </a>
+                    ))}
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+
+            {authView === 'email-signin' ? (
+              <>
+                <h2 style={{ marginTop: 0 }}>Sign in with email</h2>
+                <form onSubmit={handleLogin} style={{ display: 'grid', gap: '0.75rem', maxWidth: 480 }}>
+                  <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email" style={inputStyle} />
+                  <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password" type="password" style={inputStyle} />
+                  <button type="submit" style={buttonStyle}>Sign in</button>
+                </form>
+                {oauthProviders.length > 0 ? (
+                  <div style={{ display: 'grid', gap: '0.6rem', maxWidth: 480, marginTop: '1rem' }}>
+                    <p style={{ margin: 0, color: '#64748b', fontSize: '0.85rem' }}>or</p>
+                    {oauthProviders.map((provider) => (
+                      <a key={provider.id} href={`/api/auth/oauth/${provider.id}/start`} style={oauthButtonStyle}>
+                        Sign in with {provider.label}
+                      </a>
+                    ))}
+                  </div>
+                ) : null}
+                <div style={{ display: 'flex', gap: '1rem', marginTop: '0.9rem', flexWrap: 'wrap' }}>
+                  <button type="button" style={linkButtonStyle} onClick={() => { setAuthView('email-signup'); setStatus(''); }}>
+                    Create account
+                  </button>
+                  <button type="button" style={linkButtonStyle} onClick={() => { setAuthView('email-forgot'); setStatus(''); }}>
+                    Forgot password?
+                  </button>
+                </div>
+              </>
+            ) : null}
+
+            {authView === 'email-signup' ? (
+              <>
+                <h2 style={{ marginTop: 0 }}>Create account</h2>
+                <form onSubmit={handleSignup} style={{ display: 'grid', gap: '0.75rem', maxWidth: 480 }}>
+                  <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Name" style={inputStyle} />
+                  <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email" style={inputStyle} />
+                  <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password (10+ characters)" type="password" style={inputStyle} />
+                  <button type="submit" style={buttonStyle}>Create account</button>
+                </form>
+                <p style={{ margin: '0.9rem 0 0' }}>
+                  <button type="button" style={linkButtonStyle} onClick={() => { setAuthView('email-signin'); setStatus(''); }}>
+                    Back to sign in
+                  </button>
+                </p>
+              </>
+            ) : null}
+
+            {authView === 'email-confirm' ? (
+              <>
+                <h2 style={{ marginTop: 0 }}>Confirm your email</h2>
+                <p style={{ color: '#cbd5e1' }}>Enter the code we emailed to {email}.</p>
+                <form onSubmit={handleConfirmSignup} style={{ display: 'grid', gap: '0.75rem', maxWidth: 480 }}>
+                  <input value={code} onChange={(event) => setCode(event.target.value)} placeholder="Confirmation code" style={inputStyle} />
+                  <button type="submit" style={buttonStyle}>Confirm</button>
+                </form>
+                <p style={{ margin: '0.9rem 0 0' }}>
+                  <button type="button" style={linkButtonStyle} onClick={handleResendCode}>Resend code</button>
+                </p>
+              </>
+            ) : null}
+
+            {authView === 'email-forgot' ? (
+              <>
+                <h2 style={{ marginTop: 0 }}>Reset password</h2>
+                <form onSubmit={handleForgotPassword} style={{ display: 'grid', gap: '0.75rem', maxWidth: 480 }}>
+                  <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email" style={inputStyle} />
+                  <button type="submit" style={buttonStyle}>Send reset code</button>
+                </form>
+                <p style={{ margin: '0.9rem 0 0' }}>
+                  <button type="button" style={linkButtonStyle} onClick={() => { setAuthView('email-signin'); setStatus(''); }}>
+                    Back to sign in
+                  </button>
+                </p>
+              </>
+            ) : null}
+
+            {authView === 'email-reset' ? (
+              <>
+                <h2 style={{ marginTop: 0 }}>Enter reset code</h2>
+                <form onSubmit={handleResetPassword} style={{ display: 'grid', gap: '0.75rem', maxWidth: 480 }}>
+                  <input value={code} onChange={(event) => setCode(event.target.value)} placeholder="Reset code" style={inputStyle} />
+                  <input value={newPassword} onChange={(event) => setNewPassword(event.target.value)} placeholder="New password (10+ characters)" type="password" style={inputStyle} />
+                  <button type="submit" style={buttonStyle}>Reset password</button>
+                </form>
+              </>
+            ) : null}
           </section>
         ) : (
           <div style={{ display: 'grid', gap: '1.5rem' }}>
@@ -754,6 +973,28 @@ const buttonStyle: CSSProperties = {
   color: '#07111f',
   cursor: 'pointer',
   fontWeight: 700,
+};
+
+const oauthButtonStyle: CSSProperties = {
+  display: 'block',
+  textAlign: 'center',
+  padding: '0.8rem 1rem',
+  borderRadius: 10,
+  border: '1px solid #334155',
+  background: 'transparent',
+  color: 'white',
+  textDecoration: 'none',
+  fontWeight: 600,
+};
+
+const linkButtonStyle: CSSProperties = {
+  background: 'none',
+  border: 'none',
+  padding: 0,
+  color: '#7dd3fc',
+  cursor: 'pointer',
+  fontSize: '0.9rem',
+  fontWeight: 600,
 };
 
 const mediaTypeBadgeStyle: CSSProperties = {

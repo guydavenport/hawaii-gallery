@@ -4,9 +4,10 @@ A private gallery app for photos and videos from a Hawaii trip.
 
 ## Stack
 - Next.js
-- Auth: Amazon Cognito for the admin account; a single shared password (no account) for guest view-only access
+- Auth: Amazon Cognito (email/password, with self-service sign-up, forgot-password, and MFA support built in but currently off), Google OAuth, and a legacy shared password for guest view-only access (being phased out — see "Access requests" below)
 - Media storage: S3 (private bucket, presigned URLs)
-- Metadata storage: DynamoDB (`hawaii-gallery-media` table)
+- Metadata storage: DynamoDB (`hawaii-gallery-media` table, `hawaii-gallery-access-requests` table)
+- Notifications: SES (new access-request emails)
 - Hosting: AWS Amplify Hosting (Lambda-based SSR compute)
 
 ## Run locally
@@ -29,10 +30,22 @@ npm run dev
 | `COGNITO_USER_POOL_ID` | Cognito user pool used for admin sign-in |
 | `COGNITO_CLIENT_ID` | Cognito app client (no secret) used for admin sign-in |
 | `SESSION_SECRET` | Random secret used to sign session cookies — generate with `openssl rand -hex 32` |
-| `GUEST_PASSWORD` | Shared password for guest (view-only) access — sign in with no email |
+| `GUEST_PASSWORD` | Legacy shared password for guest (view-only) access — sign in with no email. Comma-separate multiple passwords. Being phased out in favor of per-person accounts + approval. |
 | `DYNAMODB_TABLE` | DynamoDB table storing media metadata (`hawaii-gallery-media`) |
+| `ACCESS_REQUESTS_TABLE` | DynamoDB table storing per-email approval state (`hawaii-gallery-access-requests`) |
+| `SES_FROM_EMAIL` | Verified SES sender used for "new access request" notification emails |
+| `ACCESS_REQUEST_NOTIFY_EMAIL` | Address that receives "new access request" notification emails |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth client, from Google Cloud Console — leave blank to hide the "Sign in with Google" button |
 
-Two account types: **admin** (email + Cognito password — can upload, sync, edit descriptions, and hide items from guests) and **guest** (leave the email field blank, enter `GUEST_PASSWORD` — view-only, sees only non-hidden items). Admin accounts are created manually (no public sign-up):
+### Accounts and access requests
+
+Two ways to sign in, both gated by admin approval:
+- **Email/password (Cognito)** — self-service: "Create account" on the sign-in screen registers via Cognito (email verification code sent automatically), "Forgot password?" resets via an emailed code. No MFA currently (Cognito supports TOTP/SMS MFA if ever needed — off for now).
+- **Google** — only shown if `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` are set. The OAuth provider abstraction (`app/lib/oauth/`) is written so Apple/Facebook can be added later by implementing the same `OAuthProvider` interface and registering it in `app/lib/oauth/index.ts` — no changes needed to the start/callback routes.
+
+Either path lands in `hawaii-gallery-access-requests` (keyed by email). First sign-in with a new email creates a `pending` record and emails `ACCESS_REQUEST_NOTIFY_EMAIL`; the admin approves (as `guest` or `admin`) or denies from a section at the top of `/admin`. Pre-approve a known email in advance by writing a `status: 'approved'` item directly to the table — no need to wait for them to sign in first.
+
+Admin Cognito accounts can still be created manually (bypasses self-service sign-up/confirmation):
 ```bash
 aws cognito-idp admin-create-user --user-pool-id <POOL_ID> --username <email> \
   --user-attributes Name=email,Value=<email> Name=email_verified,Value=true \
@@ -40,6 +53,7 @@ aws cognito-idp admin-create-user --user-pool-id <POOL_ID> --username <email> \
 aws cognito-idp admin-set-user-password --user-pool-id <POOL_ID> --username <email> \
   --password '<temp-password>' --permanent --profile davenport --region us-east-1
 ```
+Remember to also add an `approved`/`admin` row for them in `hawaii-gallery-access-requests`, or their first login will land in the pending queue like anyone else.
 
 The bucket is private (no public access) — the app generates short-lived presigned URLs for both uploads (PUT) and viewing (GET). If your SSO session expires, run:
 
@@ -97,12 +111,13 @@ aws ssm put-parameter --name "/hawaii-gallery/prod/<NAME>" --value "<value>" \
 ```
 (use `--type SecureString` for `SESSION_SECRET`). Takes effect on the next cold start — redeploy or wait for Lambda to recycle.
 
-**IAM**: the app runs under a dedicated role (`hawaii-gallery-amplify`) trusted by both `amplify.amazonaws.com` and `lambda.amazonaws.com`, scoped to: the S3 media bucket, `cognito-idp:InitiateAuth` on the user pool, the DynamoDB table, the SSM config path above, and CloudWatch Logs.
+**IAM**: the app runs under a dedicated role (`hawaii-gallery-amplify`) trusted by both `amplify.amazonaws.com` and `lambda.amazonaws.com`, scoped to: the S3 media bucket, Cognito (`InitiateAuth`, `SignUp`, `ConfirmSignUp`, `ResendConfirmationCode`, `ForgotPassword`, `ConfirmForgotPassword`) on the user pool, both DynamoDB tables, `ses:SendEmail` restricted to the `SES_FROM_EMAIL` address, the SSM config path above, and CloudWatch Logs.
 
 Auth is enforced per-route (not via Next.js middleware) inside each `/api/media*` handler, since the AWS SDK needed to read SSM isn't safe to bundle into Next's Edge middleware runtime.
 
 **Filesystem gotcha:** Amplify's Lambda-based SSR compute has a **read-only filesystem** outside `/tmp`. The app originally stored metadata in `data/media.json` on disk — reads worked fine in production, but every write (upload registration, sync, edits) was silently failing with an unhandled exception until this was caught and metadata storage was moved to DynamoDB. `data/media.json` and `data/photo-import-state.json` remain in the repo as a point-in-time backup / for the local import script's bookkeeping, but the deployed app no longer reads or writes them.
 
 ## Next steps
-- Multiple guest passwords / per-guest tracking, if that's ever needed
+- Remove `GUEST_PASSWORD` entirely once per-person accounts are confirmed working for everyone
+- Add Apple/Facebook as additional OAuth providers (see `app/lib/oauth/`)
 - Album or trip grouping beyond a single gallery

@@ -20,6 +20,16 @@ interface SyncRemoveCandidate {
   title: string;
 }
 
+interface AccessRequestItem {
+  email: string;
+  name: string;
+  provider: string;
+  status: 'pending' | 'approved' | 'denied';
+  role: 'admin' | 'guest';
+  requestedAt: string;
+  decidedAt?: string;
+}
+
 type AccessState = 'checking' | 'denied' | 'allowed';
 
 export default function AdminApp() {
@@ -36,12 +46,40 @@ export default function AdminApp() {
   const [selectedRemoveIds, setSelectedRemoveIds] = useState<Set<string>>(new Set());
   const [syncing, setSyncing] = useState(false);
 
+  const [accessRequests, setAccessRequests] = useState<AccessRequestItem[]>([]);
+  const [decidingEmail, setDecidingEmail] = useState<string | null>(null);
+
   useEffect(() => {
     fetch('/api/auth')
       .then((res) => res.json())
       .then((data) => setAccess(data.authenticated && data.role === 'admin' ? 'allowed' : 'denied'))
       .catch(() => setAccess('denied'));
   }, []);
+
+  async function loadAccessRequests() {
+    const response = await fetch('/api/access-requests');
+    if (!response.ok) return;
+    setAccessRequests(await response.json());
+  }
+
+  useEffect(() => {
+    if (access === 'allowed') loadAccessRequests();
+  }, [access]);
+
+  async function decideAccessRequest(email: string, status: 'approved' | 'denied', role: 'admin' | 'guest') {
+    setDecidingEmail(email);
+    const response = await fetch(`/api/access-requests/${encodeURIComponent(email)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status, role }),
+    });
+    if (response.ok) {
+      await loadAccessRequests();
+    } else {
+      setStatus('Failed to update access request');
+    }
+    setDecidingEmail(null);
+  }
 
   async function handleUpload(event: FormEvent) {
     event.preventDefault();
@@ -210,6 +248,66 @@ export default function AdminApp() {
         </header>
 
         {status ? <p style={{ color: '#cbd5e1' }}>{status}</p> : null}
+
+        {accessRequests.some((r) => r.status === 'pending') ? (
+          <section style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid #38bdf8', borderRadius: 20, padding: '1.2rem' }}>
+            <h2 style={{ marginTop: 0 }}>
+              Access requests ({accessRequests.filter((r) => r.status === 'pending').length} pending)
+            </h2>
+            <div style={{ display: 'grid', gap: '0.75rem' }}>
+              {accessRequests
+                .filter((r) => r.status === 'pending')
+                .map((request) => (
+                  <div
+                    key={request.email}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: '1rem',
+                      flexWrap: 'wrap',
+                      padding: '0.75rem',
+                      borderRadius: 12,
+                      border: '1px solid #334155',
+                    }}
+                  >
+                    <div>
+                      <p style={{ margin: 0, fontWeight: 700 }}>{request.name}</p>
+                      <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.85rem' }}>
+                        {request.email} · via {request.provider}
+                      </p>
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        style={buttonStyle}
+                        disabled={decidingEmail === request.email}
+                        onClick={() => decideAccessRequest(request.email, 'approved', 'guest')}
+                      >
+                        Approve as guest
+                      </button>
+                      <button
+                        type="button"
+                        style={{ ...buttonStyle, background: '#a78bfa' }}
+                        disabled={decidingEmail === request.email}
+                        onClick={() => decideAccessRequest(request.email, 'approved', 'admin')}
+                      >
+                        Approve as admin
+                      </button>
+                      <button
+                        type="button"
+                        style={{ ...buttonStyle, background: 'transparent', border: '1px solid #fca5a5', color: '#fca5a5' }}
+                        disabled={decidingEmail === request.email}
+                        onClick={() => decideAccessRequest(request.email, 'denied', 'guest')}
+                      >
+                        Deny
+                      </button>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </section>
+        ) : null}
 
         <section style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: 20, padding: '1.2rem' }}>
           <h2 style={{ marginTop: 0 }}>Upload new memories</h2>
